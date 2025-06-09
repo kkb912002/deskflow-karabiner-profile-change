@@ -39,3 +39,6 @@ CMakeFiles/*
 
 # scripts folder
 /scripts
+
+# qt
+/6.9.1

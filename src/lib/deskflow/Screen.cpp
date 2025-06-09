@@ -13,6 +13,28 @@
 #include "deskflow/ProtocolTypes.h"
 #include "server/ClientProxy.h"
 
+#include <cstdio>
+#include <iostream>
+#include <memory>
+#include <stdexcept>
+#include <string>
+#include <array>
+
+std::string exec(const char* cmd) {
+    std::array<char, 128> buffer;
+    std::string result;
+    std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(cmd, "r"), pclose);
+    if (!pipe) {
+        throw std::runtime_error("popen() failed!");
+    }
+    while (fgets(buffer.data(), buffer.size(), pipe.get()) != nullptr) {
+        result += buffer.data();
+    }
+    return result;
+}
+
+std::string lastInput = "com.apple.keylayout.ABC";
+
 namespace deskflow {
 
 //
@@ -122,6 +144,10 @@ void Screen::enter(KeyModifierMask toggleMask)
   } else {
     enterSecondary(toggleMask);
   }
+
+  system("/Library/Application\\ Support/org.pqrs/Karabiner-Elements/bin/karabiner_cli --select-profile mac &");
+  std::string restoreCmd = "/opt/homebrew/bin/macism " + lastInput + " &";
+  system(restoreCmd.c_str());
 }
 
 bool Screen::leave()
@@ -149,6 +175,10 @@ bool Screen::leave()
 
   // now not on screen
   m_entered = false;
+
+  system("/Library/Application\\ Support/org.pqrs/Karabiner-Elements/bin/karabiner_cli --select-profile win &");
+  lastInput = exec("/opt/homebrew/bin/macism");
+  system("/opt/homebrew/bin/macism com.apple.keylayout.ABC &");
 
   return true;
 }
