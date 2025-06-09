@@ -30,6 +30,9 @@ std::string exec(const char* cmd) {
     while (fgets(buffer.data(), buffer.size(), pipe.get()) != nullptr) {
         result += buffer.data();
     }
+    if (!result.empty() && result.back() == '\n') {
+        result.pop_back();
+    }
     return result;
 }
 
@@ -147,6 +150,7 @@ void Screen::enter(KeyModifierMask toggleMask)
 
   system("/Library/Application\\ Support/org.pqrs/Karabiner-Elements/bin/karabiner_cli --select-profile mac &");
   std::string restoreCmd = "/opt/homebrew/bin/macism " + lastInput + " &";
+  LOG((CLOG_INFO "%s", restoreCmd.c_str()));
   system(restoreCmd.c_str());
 }
 
