@@ -1,5 +1,6 @@
 /*
  * Deskflow -- mouse and keyboard sharing utility
+ * SPDX-FileCopyrightText: (C) 2025 Deskflow Developers
  * SPDX-FileCopyrightText: (C) 2012 Symless Ltd.
  * SPDX-FileCopyrightText: (C) 2002 Chris Schoeneman
  * SPDX-License-Identifier: GPL-2.0-only WITH LicenseRef-OpenSSL-Exception
@@ -11,7 +12,6 @@
 #include "base/Event.h"
 #include "base/IEventQueue.h"
 #include "base/Log.h"
-#include "base/TMethodEventJob.h"
 #include "client/Client.h"
 #include "common/Constants.h"
 #include "deskflow/ArgParser.h"
@@ -58,7 +58,7 @@
 #include <sstream>
 #include <stdio.h>
 
-#define RETRY_TIME 1.0
+constexpr static auto s_retryTime = 1.0;
 
 ClientApp::ClientApp(IEventQueue *events) : App(events, new deskflow::ClientArgs())
 {
@@ -72,9 +72,9 @@ void ClientApp::parseArgs(int argc, const char *const *argv)
 
   if (!result || args().m_shouldExitOk || args().m_shouldExitFail) {
     if (args().m_shouldExitOk) {
-      m_bye(kExitSuccess);
+      m_bye(s_exitSuccess);
     } else {
-      m_bye(kExitArgs);
+      m_bye(s_exitArgs);
     }
   } else {
     // save server address
@@ -87,9 +87,9 @@ void ClientApp::parseArgs(int argc, const char *const *argv)
         // we'll try to resolve the address each time we connect to the
         // server.  a bad port will never get better.  patch by Brent
         // Priddy.
-        if (!args().m_restartable || e.getError() == XSocketAddress::kBadPort) {
+        if (!args().m_restartable || e.getError() == XSocketAddress::SocketError::BadPort) {
           LOG((CLOG_CRIT "%s: %s" BYE, args().m_pname, e.what(), args().m_pname));
-          m_bye(kExitFailed);
+          m_bye(s_exitFailed);
         }
       }
     }
@@ -105,30 +105,25 @@ void ClientApp::help()
        << " [--invert-scroll]"
 #ifdef WINAPI_XWINDOWS
        << " [--display <display>]"
-       << " [--no-xinitthreads]"
 #endif
-       << HELP_SYS_ARGS << HELP_COMMON_ARGS << " <server-address>"
+       << s_helpSysArgs << s_helpCommonArgs << " <server-address>"
        << "\n\n"
        << "Connect to a " << kAppName << " mouse/keyboard sharing server.\n"
        << "\n"
        << "  -a, --address <address>  local network interface address.\n"
-       << HELP_COMMON_INFO_1 << HELP_SYS_INFO << "      --yscroll <delta>    defines the vertical scrolling delta,\n"
+       << s_helpGeneralArgs << s_helpSysInfo << "      --yscroll <delta>    defines the vertical scrolling delta,\n"
        << "                             which is 120 by default.\n"
-#ifndef WINAPI_XWINDOWS
-       << DRAG_AND_DROP "\n"
-#endif
        << "      --sync-language      enable language synchronization.\n"
        << "      --invert-scroll      invert scroll direction on this\n"
        << "                             computer.\n"
 #if WINAPI_XWINDOWS
        << "      --display <display>  when in X mode, connect to the X server\n"
        << "                             at <display>.\n"
-       << "      --no-xinitthreads    do not call XInitThreads()\n"
 #endif
-       << HELP_COMMON_INFO_2 << "\n"
+       << s_helpVersionArgs << "\n"
        << "* marks defaults.\n"
 
-       << kHelpNoWayland
+       << s_helpNoWayland
 
        << "\n"
        << "The server address is of the form: [<hostname>][:<port>].\n"
@@ -180,11 +175,7 @@ deskflow::Screen *ClientApp::createScreen()
 #if WINAPI_XWINDOWS
   LOG((CLOG_INFO "using legacy x windows screen"));
   return new deskflow::Screen(
-      new XWindowsScreen(
-          args().m_display, false, args().m_disableXInitThreads, args().m_yscroll, m_events,
-          args().m_clientScrollDirection
-      ),
-      m_events
+      new XWindowsScreen(args().m_display, false, args().m_yscroll, m_events, args().m_clientScrollDirection), m_events
   );
 
 #endif
@@ -201,12 +192,12 @@ void ClientApp::updateStatus() const
   updateStatus("");
 }
 
-void ClientApp::updateStatus(const std::string &msg) const
+void ClientApp::updateStatus(const std::string_view &) const
 {
   // do nothing
 }
 
-void ClientApp::handleScreenError(const Event &, void *)
+void ClientApp::handleScreenError()
 {
   LOG((CLOG_CRIT "error on screen"));
   m_events->addEvent(Event(EventTypes::Quit));
@@ -215,10 +206,9 @@ void ClientApp::handleScreenError(const Event &, void *)
 deskflow::Screen *ClientApp::openClientScreen()
 {
   deskflow::Screen *screen = createScreen();
-  m_events->adoptHandler(
-      EventTypes::ScreenError, screen->getEventTarget(),
-      new TMethodEventJob<ClientApp>(this, &ClientApp::handleScreenError)
-  );
+  m_events->addHandler(EventTypes::ScreenError, screen->getEventTarget(), [this](const auto &) {
+    handleScreenError();
+  });
   return screen;
 }
 
@@ -230,10 +220,9 @@ void ClientApp::closeClientScreen(deskflow::Screen *screen)
   }
 }
 
-void ClientApp::handleClientRestart(const Event &, void *vtimer)
+void ClientApp::handleClientRestart(const Event &, EventQueueTimer *timer)
 {
   // discard old timer
-  auto *timer = static_cast<EventQueueTimer *>(vtimer);
   m_events->deleteTimer(timer);
   m_events->removeHandler(EventTypes::Timer, timer);
 
@@ -246,18 +235,16 @@ void ClientApp::scheduleClientRestart(double retryTime)
   // install a timer and handler to retry later
   LOG((CLOG_DEBUG "retry in %.0f seconds", retryTime));
   EventQueueTimer *timer = m_events->newOneShotTimer(retryTime, nullptr);
-  m_events->adoptHandler(
-      EventTypes::Timer, timer, new TMethodEventJob<ClientApp>(this, &ClientApp::handleClientRestart, timer)
-  );
+  m_events->addHandler(EventTypes::Timer, timer, [this, timer](const auto &e) { handleClientRestart(e, timer); });
 }
 
-void ClientApp::handleClientConnected(const Event &, void *)
+void ClientApp::handleClientConnected() const
 {
   LOG((CLOG_NOTE "connected to server"));
   updateStatus();
 }
 
-void ClientApp::handleClientFailed(const Event &e, void *)
+void ClientApp::handleClientFailed(const Event &e)
 {
   if ((++m_lastServerAddressIndex) < m_client->getLastResolvedAddressesCount()) {
     std::unique_ptr<Client::FailInfo> info(static_cast<Client::FailInfo *>(e.getData()));
@@ -265,15 +252,15 @@ void ClientApp::handleClientFailed(const Event &e, void *)
     updateStatus(std::string("Failed to connect to server: ") + info->m_what + " Trying next address...");
     LOG((CLOG_WARN "failed to connect to server=%s, trying next address", info->m_what.c_str()));
     if (!m_suspended) {
-      scheduleClientRestart(RETRY_TIME);
+      scheduleClientRestart(s_retryTime);
     }
   } else {
     m_lastServerAddressIndex = 0;
-    handleClientRefused(e, nullptr);
+    handleClientRefused(e);
   }
 }
 
-void ClientApp::handleClientRefused(const Event &e, void *)
+void ClientApp::handleClientRefused(const Event &e)
 {
   std::unique_ptr<Client::FailInfo> info(static_cast<Client::FailInfo *>(e.getData()));
 
@@ -284,18 +271,18 @@ void ClientApp::handleClientRefused(const Event &e, void *)
   } else {
     LOG((CLOG_WARN "failed to connect to server: %s", info->m_what.c_str()));
     if (!m_suspended) {
-      scheduleClientRestart(RETRY_TIME);
+      scheduleClientRestart(s_retryTime);
     }
   }
 }
 
-void ClientApp::handleClientDisconnected(const Event &, void *)
+void ClientApp::handleClientDisconnected()
 {
   LOG((CLOG_NOTE "disconnected from server"));
   if (!args().m_restartable) {
     m_events->addEvent(Event(EventTypes::Quit));
   } else if (!m_suspended) {
-    scheduleClientRestart(RETRY_TIME);
+    scheduleClientRestart(s_retryTime);
   }
   updateStatus();
 }
@@ -305,25 +292,18 @@ Client *ClientApp::openClient(const std::string &name, const NetworkAddress &add
   auto *client = new Client(m_events, name, address, getSocketFactory(), screen, args());
 
   try {
-    m_events->adoptHandler(
-        EventTypes::ClientConnected, client->getEventTarget(),
-        new TMethodEventJob<ClientApp>(this, &ClientApp::handleClientConnected)
-    );
-
-    m_events->adoptHandler(
-        EventTypes::ClientConnectionFailed, client->getEventTarget(),
-        new TMethodEventJob<ClientApp>(this, &ClientApp::handleClientFailed)
-    );
-
-    m_events->adoptHandler(
-        EventTypes::ClientConnectionRefused, client->getEventTarget(),
-        new TMethodEventJob<ClientApp>(this, &ClientApp::handleClientRefused)
-    );
-
-    m_events->adoptHandler(
-        EventTypes::ClientDisconnected, client->getEventTarget(),
-        new TMethodEventJob<ClientApp>(this, &ClientApp::handleClientDisconnected)
-    );
+    m_events->addHandler(EventTypes::ClientConnected, client->getEventTarget(), [this](const auto &) {
+      handleClientConnected();
+    });
+    m_events->addHandler(EventTypes::ClientConnectionFailed, client->getEventTarget(), [this](const auto &e) {
+      handleClientFailed(e);
+    });
+    m_events->addHandler(EventTypes::ClientConnectionRefused, client->getEventTarget(), [this](const auto &e) {
+      handleClientRefused(e);
+    });
+    m_events->addHandler(EventTypes::ClientDisconnected, client->getEventTarget(), [this](const auto &) {
+      handleClientDisconnected();
+    });
 
   } catch (std::bad_alloc &ba) {
     delete client;
@@ -338,11 +318,11 @@ void ClientApp::closeClient(Client *client)
   if (client == nullptr) {
     return;
   }
-
-  m_events->removeHandler(EventTypes::ClientConnected, client);
-  m_events->removeHandler(EventTypes::ClientConnectionFailed, client);
-  m_events->removeHandler(EventTypes::ClientConnectionRefused, client);
-  m_events->removeHandler(EventTypes::ClientDisconnected, client);
+  using enum EventTypes;
+  m_events->removeHandler(ClientConnected, client);
+  m_events->removeHandler(ClientConnectionFailed, client);
+  m_events->removeHandler(ClientConnectionRefused, client);
+  m_events->removeHandler(ClientDisconnected, client);
   delete client;
 }
 
@@ -406,8 +386,7 @@ int ClientApp::mainLoop()
 {
   // create socket multiplexer.  this must happen after daemonization
   // on unix because threads evaporate across a fork().
-  SocketMultiplexer multiplexer;
-  setSocketMultiplexer(&multiplexer);
+  setSocketMultiplexer(std::make_unique<SocketMultiplexer>());
 
   // start client, etc
   appUtil().startNode();
@@ -438,7 +417,7 @@ int ClientApp::mainLoop()
   updateStatus();
   LOG((CLOG_NOTE "stopped client"));
 
-  return kExitSuccess;
+  return s_exitSuccess;
 }
 
 static int daemonMainLoopStatic(int argc, const char **argv)
@@ -483,7 +462,7 @@ void ClientApp::startNode()
   // we shouldn't retry.
   LOG((CLOG_DEBUG1 "starting client"));
   if (!startClient()) {
-    m_bye(kExitFailed);
+    m_bye(s_exitFailed);
   }
 }
 

@@ -7,7 +7,6 @@
 #include "server/ClientProxy1_6.h"
 
 #include "base/Log.h"
-#include "base/TMethodEventJob.h"
 #include "deskflow/ClipboardChunk.h"
 #include "deskflow/ProtocolUtil.h"
 #include "deskflow/StreamChunker.h"
@@ -22,10 +21,9 @@ ClientProxy1_6::ClientProxy1_6(const std::string &name, deskflow::IStream *strea
     : ClientProxy1_5(name, stream, server, events),
       m_events(events)
 {
-  m_events->adoptHandler(
-      EventTypes::ClipboardSending, this,
-      new TMethodEventJob<ClientProxy1_6>(this, &ClientProxy1_6::handleClipboardSendingEvent)
-  );
+  m_events->addHandler(EventTypes::ClipboardSending, this, [this](const auto &e) {
+    ClipboardChunk::send(getStream(), e.getDataObject());
+  });
 }
 
 void ClientProxy1_6::setClipboard(ClipboardID id, const IClipboard *clipboard)
@@ -45,11 +43,6 @@ void ClientProxy1_6::setClipboard(ClipboardID id, const IClipboard *clipboard)
   }
 }
 
-void ClientProxy1_6::handleClipboardSendingEvent(const Event &event, void *)
-{
-  ClipboardChunk::send(getStream(), event.getDataObject());
-}
-
 bool ClientProxy1_6::recvClipboard()
 {
   // parse message
@@ -57,10 +50,10 @@ bool ClientProxy1_6::recvClipboard()
   ClipboardID id;
   uint32_t seq;
 
-  if (int r = ClipboardChunk::assemble(getStream(), dataCached, id, seq); r == kStart) {
+  if (auto r = ClipboardChunk::assemble(getStream(), dataCached, id, seq); r == TransferState::Started) {
     size_t size = ClipboardChunk::getExpectedSize();
     LOG((CLOG_DEBUG "receiving clipboard %d size=%d", id, size));
-  } else if (r == kFinish) {
+  } else if (r == TransferState::Finished) {
     LOG(
         (CLOG_DEBUG "received client \"%s\" clipboard %d seqnum=%d, size=%d", getName().c_str(), id, seq,
          dataCached.size())

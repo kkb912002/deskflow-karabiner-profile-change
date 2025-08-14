@@ -1,10 +1,22 @@
-![Deskflow](https://github.com/user-attachments/assets/f005b958-24df-4f4a-9bfd-4f834dae59d6)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/deskflow/deskflow-artwork/blob/main/logo/deskflow-logo-dark-200px.png?raw=true">
+  <source media="(prefers-color-scheme: light)" srcset="https://github.com/deskflow/deskflow-artwork/blob/main/logo/deskflow-logo-light-200px.png?raw=true">
+  <img alt="Deskflow" src="https://github.com/user-attachments/assets/f005b958-24df-4f4a-9bfd-4f834dae59d6">
+</picture>
 
 **Deskflow** is a free and open source keyboard and mouse sharing app.
 Use the keyboard, mouse, or trackpad of one computer to control nearby computers,
 and work seamlessly between them.
 It's like a software KVM (but without the video).
 TLS encryption is enabled by default. Wayland is supported. Clipboard sharing is supported.
+
+> [!TIP]
+>
+> **Chat with us**
+>
+> - Main discussion on Matrix: [`#deskflow:matrix.org`](https://matrix.to/#/#deskflow:matrix.org) ([Matrix clients](https://matrix.org/ecosystem/clients/))
+> - Discussion also happens on IRC: `#deskflow` or `#deskflow-dev` on [Libera Chat](https://libera.chat/)
+> - Start a [new discussion](https://github.com/deskflow/deskflow/discussions) on our GitHub project.
 
 ## Download
 
@@ -50,7 +62,7 @@ We support all major operating systems, including Windows, macOS, Linux, and Uni
 > [!NOTE]
 > On Windows, you will need to install the
 > [Microsoft Visual C++ Redistributable](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist?view=msvc-170#latest-microsoft-visual-c-redistributable-version).  
-> Download latest: [`vc_redist.x64.exe`](https://aka.ms/vs/17/release/vc_redist.x64.exe)
+> Download latest: [`vc_redist.x64.exe`](https://aka.ms/vs/17/release/vc_redist.x64.exe) [`vc_redist.arm64.exe`](https://aka.ms/vs/17/release/vc_redist.arm64.exe)
 
 Windows 10 or higher is required.
 

@@ -1,5 +1,6 @@
 /*
  * Deskflow -- mouse and keyboard sharing utility
+ * SPDX-FileCopyrightText: (C) 2025 Deskflow Developers
  * SPDX-FileCopyrightText: (C) 2012 - 2016 Symless Ltd.
  * SPDX-FileCopyrightText: (C) 2002 Chris Schoeneman
  * SPDX-License-Identifier: GPL-2.0-only WITH LicenseRef-OpenSSL-Exception
@@ -12,7 +13,6 @@
 #include "base/IEventQueue.h"
 #include "base/Log.h"
 #include "base/Stopwatch.h"
-#include "base/TMethodEventJob.h"
 #include "deskflow/App.h"
 #include "deskflow/ArgsBase.h"
 #include "deskflow/ClientApp.h"
@@ -26,14 +26,11 @@
 #include "platform/XWindowsScreenSaver.h"
 #include "platform/XWindowsUtil.h"
 
+#include <X11/X.h>
+#include <X11/Xutil.h>
 #include <algorithm>
 #include <cstdlib>
 #include <cstring>
-#if X_DISPLAY_MISSING
-#error X11 is required to build deskflow
-#else
-#include <X11/X.h>
-#include <X11/Xutil.h>
 #define XK_MISCELLANY
 #define XK_XKB_KEYS
 #include <X11/keysymdef.h>
@@ -64,7 +61,6 @@ extern "C"
 #ifdef HAVE_XI2
 #include <X11/extensions/XInput2.h>
 #endif
-#endif
 
 static int xi_opcode;
 
@@ -86,7 +82,7 @@ static int xi_opcode;
 XWindowsScreen *XWindowsScreen::s_screen = nullptr;
 
 XWindowsScreen::XWindowsScreen(
-    const char *displayName, bool isPrimary, bool disableXInitThreads, int mouseScrollDelta, IEventQueue *events,
+    const char *displayName, bool isPrimary, int mouseScrollDelta, IEventQueue *events,
     deskflow::ClientScrollDirection scrollDirection
 )
     : PlatformScreen(events, scrollDirection),
@@ -101,12 +97,8 @@ XWindowsScreen::XWindowsScreen(
     m_mouseScrollDelta = 120;
   s_screen = this;
 
-  if (!disableXInitThreads) {
-    // initializes Xlib support for concurrent threads.
-    if (XInitThreads() == 0)
-      throw std::runtime_error("XInitThreads() returned zero");
-  } else {
-    LOG((CLOG_DEBUG "skipping XInitThreads()"));
+  if (XInitThreads() == 0) {
+    throw std::runtime_error("XInitThreads() returned zero");
   }
 
   // set the X I/O error handler so we catch the display disconnecting
@@ -159,10 +151,9 @@ XWindowsScreen::XWindowsScreen(
   }
 
   // install event handlers
-  m_events->adoptHandler(
-      EventTypes::System, m_events->getSystemTarget(),
-      new TMethodEventJob<XWindowsScreen>(this, &XWindowsScreen::handleSystemEvent)
-  );
+  m_events->addHandler(EventTypes::System, m_events->getSystemTarget(), [this](const auto &e) {
+    handleSystemEvent(e);
+  });
 
   // install the platform event queue
   m_events->adoptBuffer(new XWindowsEventQueueBuffer(m_display, m_window, m_events));
@@ -486,9 +477,14 @@ void XWindowsScreen::getCursorPos(int32_t &x, int32_t &y) const
   }
 }
 
-void XWindowsScreen::reconfigure(uint32_t)
+void XWindowsScreen::reconfigure(uint32_t activeSides)
 {
-  // do nothing
+  m_activeSides = activeSides;
+}
+
+uint32_t XWindowsScreen::activeSides()
+{
+  return m_activeSides;
 }
 
 void XWindowsScreen::warpCursor(int32_t x, int32_t y)
@@ -560,7 +556,7 @@ uint32_t XWindowsScreen::registerHotKey(KeyID key, KeyModifierMask mask)
       };
 
       XModifierKeymap *modKeymap = XGetModifierMapping(m_display);
-      for (size_t j = 0; j < sizeof(s_hotKeyModifiers) / sizeof(s_hotKeyModifiers[0]) && !err; ++j) {
+      for (size_t j = 0; j < std::size(s_hotKeyModifiers) && !err; ++j) {
         // skip modifier if not in mask
         if ((mask & s_hotKeyModifiers[j]) == 0) {
           continue;
@@ -838,7 +834,7 @@ Display *XWindowsScreen::openDisplay(const char *displayName)
 {
   // get the DISPLAY
   if (displayName == nullptr) {
-    displayName = getenv("DISPLAY");
+    displayName = std::getenv("DISPLAY");
     if (displayName == nullptr) {
       displayName = ":0.0";
     }
@@ -1119,7 +1115,7 @@ Bool XWindowsScreen::findKeyEvent(Display *, XEvent *xevent, XPointer arg)
              : False;
 }
 
-void XWindowsScreen::handleSystemEvent(const Event &event, void *)
+void XWindowsScreen::handleSystemEvent(const Event &event)
 {
   auto *xevent = static_cast<XEvent *>(event.getData());
   assert(xevent != nullptr);
@@ -1184,7 +1180,7 @@ void XWindowsScreen::handleSystemEvent(const Event &event, void *)
 
     // discard matching key releases for key presses that were
     // filtered and remove them from our filtered list.
-    else if (xevent->type == KeyRelease && m_filtered.count(xevent->xkey.keycode) > 0) {
+    else if (xevent->type == KeyRelease && m_filtered.contains(xevent->xkey.keycode)) {
       m_filtered.erase(xevent->xkey.keycode);
       return;
     }
@@ -1342,6 +1338,9 @@ void XWindowsScreen::handleSystemEvent(const Event &event, void *)
         LOG((CLOG_INFO "group change: %d", xkbEvent->state.group));
         m_keyState->setActiveGroup((int32_t)xkbEvent->state.group);
         return;
+
+      default:
+        return;
       }
     }
 #endif
@@ -1486,17 +1485,18 @@ void XWindowsScreen::onMousePress(const XButtonEvent &xbutton)
 
 void XWindowsScreen::onMouseRelease(const XButtonEvent &xbutton)
 {
+  using enum EventTypes;
   LOG((CLOG_DEBUG1 "event: ButtonRelease button=%d", xbutton.button));
   ButtonID button = mapButtonFromX(&xbutton);
   KeyModifierMask mask = m_keyState->mapModifiersFromX(xbutton.state);
   if (button != kButtonNone) {
-    sendEvent(EventTypes::PrimaryScreenButtonUp, ButtonInfo::alloc(button, mask));
+    sendEvent(PrimaryScreenButtonUp, ButtonInfo::alloc(button, mask));
   } else if (xbutton.button == 4) {
     // wheel forward (away from user)
-    sendEvent(EventTypes::PrimaryScreenWheel, WheelInfo::alloc(0, 120));
+    sendEvent(PrimaryScreenWheel, WheelInfo::alloc(0, 120));
   } else if (xbutton.button == 5) {
     // wheel backward (toward user)
-    sendEvent(EventTypes::PrimaryScreenWheel, WheelInfo::alloc(0, -120));
+    sendEvent(PrimaryScreenWheel, WheelInfo::alloc(0, -120));
   }
   // XXX -- support x-axis scrolling
 }
@@ -1728,7 +1728,7 @@ KeyID XWindowsScreen::mapKeyFromX(XKeyEvent *event) const
     // do multibyte lookup.  can only call XmbLookupString with a
     // key press event and a valid XIC so we checked those above.
     char scratch[32];
-    int n = sizeof(scratch) / sizeof(scratch[0]);
+    auto n = static_cast<int>(std::size(scratch));
     char *buffer = scratch;
     int status;
     n = XmbLookupString(m_ic, event, buffer, n, &keysym, &status);
@@ -1895,7 +1895,7 @@ bool XWindowsScreen::grabMouseAndKeyboard()
       assert(result != GrabNotViewable);
       if (result != GrabSuccess) {
         LOG((CLOG_DEBUG2 "waiting to grab keyboard"));
-        ARCH->sleep(0.05);
+        Arch::sleep(0.05);
         if (timer.getTime() >= s_timeout) {
           LOG((CLOG_DEBUG2 "grab keyboard timed out"));
           return false;
@@ -1912,7 +1912,7 @@ bool XWindowsScreen::grabMouseAndKeyboard()
       // back off to avoid grab deadlock
       XUngrabKeyboard(m_display, CurrentTime);
       LOG((CLOG_DEBUG2 "ungrabbed keyboard, waiting to grab pointer"));
-      ARCH->sleep(0.05);
+      Arch::sleep(0.05);
       if (timer.getTime() >= s_timeout) {
         LOG((CLOG_DEBUG2 "grab pointer timed out"));
         return false;

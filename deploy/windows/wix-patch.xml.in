@@ -17,6 +17,7 @@
       />
     </ServiceInstall>
     <ServiceControl Id="ServiceControl" Name="Deskflow" Remove="uninstall" Start="install" Stop="both"/>
+    <RemoveFile Id="RmOldLog" On="install" Name="deskflow-daemon.log"/>
   </CPackWiXFragment>
 
   <CPackWiXFragment Id="CM_CP_deskflow_server.exe">
@@ -44,7 +45,9 @@
            Control="Finish"
            Event="DoAction"
            Value="RunDeskflow"
-           Condition= "NOT Installed" />
+           Condition= "WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1 and NOT Installed" />
+       <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOX" Value="1" />
+       <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="Run Deskflow when finished" />
     </UI>
     <CustomAction
       Id="CheckVCRedist"

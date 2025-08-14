@@ -19,7 +19,7 @@
 void OSXKeyStateTests::initTestCase()
 {
   m_arch.init();
-  m_log.setFilter(kDEBUG2);
+  m_log.setFilter(LogLevel::Debug2);
 }
 
 void OSXKeyStateTests::mapModifiersFromOSX_OSXMask()
@@ -116,7 +116,7 @@ void OSXKeyStateTests::fakePollCharWithModifier()
 bool OSXKeyStateTests::isKeyPressed(const OSXKeyState &keyState, KeyButton button)
 {
   // HACK: allow os to realize key state changes.
-  ARCH->sleep(.2);
+  Arch::sleep(.2);
 
   IKeyState::KeyButtonSet pressed;
   keyState.pollPressedKeys(pressed);

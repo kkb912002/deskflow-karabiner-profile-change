@@ -10,7 +10,8 @@
 #include "arch/IArchNetwork.h"
 #include "net/IListenSocket.h"
 
-class Mutex;
+#include <mutex>
+
 class ISocketMultiplexerJob;
 class IEventQueue;
 class SocketMultiplexer;
@@ -22,7 +23,7 @@ A listen socket using TCP.
 class TCPListenSocket : public IListenSocket
 {
 public:
-  TCPListenSocket(IEventQueue *events, SocketMultiplexer *socketMultiplexer, IArchNetwork::EAddressFamily family);
+  TCPListenSocket(IEventQueue *events, SocketMultiplexer *socketMultiplexer, IArchNetwork::AddressFamily family);
   TCPListenSocket(TCPListenSocket const &) = delete;
   TCPListenSocket(TCPListenSocket &&) = delete;
   ~TCPListenSocket() override;
@@ -38,15 +39,15 @@ public:
   // IListenSocket overrides
   std::unique_ptr<IDataSocket> accept() override;
 
-protected:
-  void setListeningJob();
-
-public:
   ISocketMultiplexerJob *serviceListening(ISocketMultiplexerJob *, bool, bool, bool);
 
 protected:
-  ArchSocket m_socket;
-  Mutex *m_mutex = nullptr;
+  void setListeningJob();
+
   IEventQueue *m_events;
+  ArchSocket m_socket;
   SocketMultiplexer *m_socketMultiplexer;
+
+private:
+  std::mutex m_mutex;
 };

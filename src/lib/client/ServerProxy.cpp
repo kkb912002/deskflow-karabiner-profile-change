@@ -1,5 +1,6 @@
 /*
  * Deskflow -- mouse and keyboard sharing utility
+ * SPDX-FileCopyrightText: (C) 2025 Deskflow Developers
  * SPDX-FileCopyrightText: (C) 2012 - 2016 Symless Ltd.
  * SPDX-FileCopyrightText: (C) 2002 Chris Schoeneman
  * SPDX-License-Identifier: GPL-2.0-only WITH LicenseRef-OpenSSL-Exception
@@ -9,7 +10,6 @@
 
 #include "base/IEventQueue.h"
 #include "base/Log.h"
-#include "base/TMethodEventJob.h"
 #include "base/XBase.h"
 #include "client/Client.h"
 #include "deskflow/AppUtil.h"
@@ -33,7 +33,6 @@
 ServerProxy::ServerProxy(Client *client, deskflow::IStream *stream, IEventQueue *events)
     : m_client(client),
       m_stream(stream),
-      m_parser(&ServerProxy::parseHandshakeMessage),
       m_events(events)
 {
   assert(m_client != nullptr);
@@ -44,15 +43,12 @@ ServerProxy::ServerProxy(Client *client, deskflow::IStream *stream, IEventQueue 
     m_modifierTranslationTable[id] = id;
 
   // handle data on stream
-  m_events->adoptHandler(
-      EventTypes::StreamInputReady, m_stream->getEventTarget(),
-      new TMethodEventJob<ServerProxy>(this, &ServerProxy::handleData)
-  );
-
-  m_events->adoptHandler(
-      EventTypes::ClipboardSending, this,
-      new TMethodEventJob<ServerProxy>(this, &ServerProxy::handleClipboardSendingEvent)
-  );
+  m_events->addHandler(EventTypes::StreamInputReady, m_stream->getEventTarget(), [this](const auto &) {
+    handleData();
+  });
+  m_events->addHandler(EventTypes::ClipboardSending, this, [this](const auto &e) {
+    ClipboardChunk::send(m_stream, e.getDataObject());
+  });
 
   // send heartbeat
   setKeepAliveRate(kKeepAliveRate);
@@ -73,10 +69,7 @@ void ServerProxy::resetKeepAliveAlarm()
   }
   if (m_keepAliveAlarm > 0.0) {
     m_keepAliveAlarmTimer = m_events->newOneShotTimer(m_keepAliveAlarm, nullptr);
-    m_events->adoptHandler(
-        EventTypes::Timer, m_keepAliveAlarmTimer,
-        new TMethodEventJob<ServerProxy>(this, &ServerProxy::handleKeepAliveAlarm)
-    );
+    m_events->addHandler(EventTypes::Timer, m_keepAliveAlarmTimer, [this](const auto &) { handleKeepAliveAlarm(); });
   }
 }
 
@@ -86,7 +79,7 @@ void ServerProxy::setKeepAliveRate(double rate)
   resetKeepAliveAlarm();
 }
 
-void ServerProxy::handleData(const Event &, void *)
+void ServerProxy::handleData()
 {
   // handle messages until there are no more.  first read message code.
   uint8_t code[4];
@@ -103,10 +96,11 @@ void ServerProxy::handleData(const Event &, void *)
     LOG((CLOG_DEBUG2 "msg from server: %c%c%c%c", code[0], code[1], code[2], code[3]));
     try {
       switch ((this->*m_parser)(code)) {
-      case kOkay:
+        using enum ConnectionResult;
+      case Okay:
         break;
 
-      case kUnknown:
+      case Unknown:
         LOG((CLOG_ERR "invalid message from server: %c%c%c%c", code[0], code[1], code[2], code[3]));
         // not possible to determine message boundaries
         // read the whole stream to discard unkonwn data
@@ -114,7 +108,7 @@ void ServerProxy::handleData(const Event &, void *)
           ;
         break;
 
-      case kDisconnect:
+      case Disconnect:
         return;
       }
     } catch (const XBadClient &e) {
@@ -131,8 +125,10 @@ void ServerProxy::handleData(const Event &, void *)
   flushCompressedMouse();
 }
 
-ServerProxy::EResult ServerProxy::parseHandshakeMessage(const uint8_t *code)
+ServerProxy::ConnectionResult ServerProxy::parseHandshakeMessage(const uint8_t *code)
 {
+  using enum ConnectionResult;
+
   if (memcmp(code, kMsgQInfo, 4) == 0) {
     queryInfo();
   }
@@ -168,7 +164,7 @@ ServerProxy::EResult ServerProxy::parseHandshakeMessage(const uint8_t *code)
     // server wants us to hangup
     LOG((CLOG_DEBUG1 "recv close"));
     m_client->disconnect(nullptr);
-    return kDisconnect;
+    return Disconnect;
   }
 
   else if (memcmp(code, kMsgEIncompatible, 4) == 0) {
@@ -177,36 +173,38 @@ ServerProxy::EResult ServerProxy::parseHandshakeMessage(const uint8_t *code)
     ProtocolUtil::readf(m_stream, kMsgEIncompatible + 4, &major, &minor);
     LOG((CLOG_ERR "server has incompatible version %d.%d", major, minor));
     m_client->refuseConnection("server has incompatible version");
-    return kDisconnect;
+    return Disconnect;
   }
 
   else if (memcmp(code, kMsgEBusy, 4) == 0) {
     LOG((CLOG_ERR "server already has a connected client with name \"%s\"", m_client->getName().c_str()));
     m_client->refuseConnection("server already has a connected client with our name");
-    return kDisconnect;
+    return Disconnect;
   }
 
   else if (memcmp(code, kMsgEUnknown, 4) == 0) {
     LOG((CLOG_ERR "server refused client with name \"%s\"", m_client->getName().c_str()));
     m_client->refuseConnection("server refused client with our name");
-    return kDisconnect;
+    return Disconnect;
   }
 
   else if (memcmp(code, kMsgEBad, 4) == 0) {
     LOG((CLOG_ERR "server disconnected due to a protocol error"));
     m_client->refuseConnection("server reported a protocol error");
-    return kDisconnect;
+    return Disconnect;
   } else if (memcmp(code, kMsgDLanguageSynchronisation, 4) == 0) {
     setServerLanguages();
   } else {
-    return kUnknown;
+    return Unknown;
   }
 
-  return kOkay;
+  return Okay;
 }
 
-ServerProxy::EResult ServerProxy::parseMessage(const uint8_t *code)
+ServerProxy::ConnectionResult ServerProxy::parseMessage(const uint8_t *code)
 {
+  using enum ConnectionResult;
+
   if (memcmp(code, kMsgDMouseMove, 4) == 0) {
     mouseMove();
   }
@@ -312,13 +310,13 @@ ServerProxy::EResult ServerProxy::parseMessage(const uint8_t *code)
     // server wants us to hangup
     LOG((CLOG_DEBUG1 "recv close"));
     m_client->disconnect(nullptr);
-    return kDisconnect;
+    return Disconnect;
   } else if (memcmp(code, kMsgEBad, 4) == 0) {
     LOG((CLOG_ERR "server disconnected due to a protocol error"));
     m_client->disconnect("server reported a protocol error");
-    return kDisconnect;
+    return Disconnect;
   } else {
-    return kUnknown;
+    return Unknown;
   }
 
   // send a reply.  this is intended to work around a delay when
@@ -330,10 +328,10 @@ ServerProxy::EResult ServerProxy::parseMessage(const uint8_t *code)
   // TCP_NODELAY is enabled.
   ProtocolUtil::writef(m_stream, kMsgCNoop);
 
-  return kOkay;
+  return Okay;
 }
 
-void ServerProxy::handleKeepAliveAlarm(const Event &, void *)
+void ServerProxy::handleKeepAliveAlarm()
 {
   LOG((CLOG_NOTE "server is dead"));
   m_client->disconnect("server is not responding");
@@ -448,6 +446,9 @@ KeyID ServerProxy::translateKey(KeyID id) const
     id2 = kKeyModifierIDSuper;
     side = 1;
     break;
+
+  default:
+    break;
   }
 
   if (id2 != kKeyModifierIDNull) {
@@ -528,12 +529,12 @@ void ServerProxy::setClipboard()
   ClipboardID id;
   uint32_t seq;
 
-  int r = ClipboardChunk::assemble(m_stream, dataCached, id, seq);
+  auto r = ClipboardChunk::assemble(m_stream, dataCached, id, seq);
 
-  if (r == kStart) {
+  if (r == TransferState::Started) {
     size_t size = ClipboardChunk::getExpectedSize();
     LOG((CLOG_DEBUG "receiving clipboard %d size=%d", id, size));
-  } else if (r == kFinish) {
+  } else if (r == TransferState::Finished) {
     LOG((CLOG_DEBUG "received clipboard %d size=%d", id, dataCached.size()));
 
     // forward
@@ -793,7 +794,7 @@ void ServerProxy::setOptions()
     }
 
     if (id != kKeyModifierIDNull) {
-      m_modifierTranslationTable[id] = static_cast<KeyModifierID>(options[i + 1]);
+      m_modifierTranslationTable[id] = options[i + 1];
       LOG((CLOG_DEBUG1 "modifier %d mapped to %d", id, m_modifierTranslationTable[id]));
     }
   }
@@ -811,11 +812,6 @@ void ServerProxy::infoAcknowledgment()
 {
   LOG((CLOG_DEBUG1 "recv info acknowledgment"));
   m_ignoreMouse = false;
-}
-
-void ServerProxy::handleClipboardSendingEvent(const Event &event, void *)
-{
-  ClipboardChunk::send(m_stream, event.getDataObject());
 }
 
 void ServerProxy::secureInputNotification()

@@ -1,5 +1,6 @@
 /*
  * Deskflow -- mouse and keyboard sharing utility
+ * SPDX-FileCopyrightText: (C) 2025 Deskflow Developers
  * SPDX-FileCopyrightText: (C) 2012 Symless Ltd.
  * SPDX-FileCopyrightText: (C) 2002 Chris Schoeneman
  * SPDX-License-Identifier: GPL-2.0-only WITH LicenseRef-OpenSSL-Exception
@@ -15,6 +16,8 @@
 #include "deskflow/App.h"
 #include "net/NetworkAddress.h"
 #include "server/Config.h"
+
+#include <memory>
 
 enum EServerState
 {
@@ -78,11 +81,10 @@ public:
   // Regular functions
   //
 
-  void reloadConfig(const Event &, void *);
-  void forceReconnect(const Event &, void *);
-  void resetServer(const Event &, void *);
-  void handleClientConnected(const Event &, void *vlistener);
-  void handleClientsDisconnected(const Event &, void *);
+  void reloadConfig();
+  void forceReconnect();
+  void resetServer();
+  void handleClientConnected(const Event &e, ClientListener *listener);
   void closeServer(Server *server);
   void stopRetryTimer();
   void updateStatus() const;
@@ -93,15 +95,14 @@ public:
   void closeServerScreen(deskflow::Screen *screen);
   void cleanupServer();
   bool initServer();
-  void retryHandler(const Event &, void *);
+  void retryHandler();
   deskflow::Screen *openServerScreen();
   PrimaryClient *openPrimaryClient(const std::string &name, deskflow::Screen *screen);
-  void handleScreenError(const Event &, void *);
-  void handleSuspend(const Event &, void *);
-  void handleResume(const Event &, void *);
+  void handleScreenError();
+  void handleSuspend();
+  void handleResume();
   ClientListener *openClientListener(const NetworkAddress &address);
   Server *openServer(ServerConfig &config, PrimaryClient *primaryClient);
-  void handleNoClients(const Event &, void *);
   bool startServer();
   Server *getServerPtr()
   {
@@ -117,17 +118,18 @@ public:
   // Static functions
   //
 
-  static void reloadSignalHandler(Arch::ESignal, void *);
+  static void reloadSignalHandler(Arch::ThreadSignal, void *);
   static ServerApp &instance()
   {
     return (ServerApp &)App::instance();
   }
 
 private:
-  void handleScreenSwitched(const Event &, void *data);
-  ISocketFactory *getSocketFactory() const;
+  void handleScreenSwitched() const;
+  std::unique_ptr<ISocketFactory> getSocketFactory() const;
   NetworkAddress getAddress(const NetworkAddress &address) const;
 
+  bool m_suspended = false;
   Server *m_server = nullptr;
   EServerState m_serverState = EServerState::kUninitialized;
   deskflow::Screen *m_serverScreen = nullptr;

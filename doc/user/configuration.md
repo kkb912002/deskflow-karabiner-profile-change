@@ -1,6 +1,6 @@
 # GUI Config
 
- Deskflow will automaticlly figure out where to save settings and other files.
+ Deskflow will automatically figure out where to save settings and other files.
 
 
 ## Unix Systems
@@ -195,7 +195,4 @@ _last = "moe:24800"
 
 # Enable verbose logging in the GUI (always off by default)
 # DESKFLOW_GUI_VERBOSE=true
-
-# Reset all settings and delete all data on startup
-# DESKFLOW_RESET_ALL=true
 ```

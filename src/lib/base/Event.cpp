@@ -55,14 +55,15 @@ Event::Flags Event::getFlags() const
 void Event::deleteData(const Event &event)
 {
   switch (event.getType()) {
-  case EventTypes::Unknown:
-  case EventTypes::Quit:
-  case EventTypes::System:
-  case EventTypes::Timer:
+    using enum EventTypes;
+  case Unknown:
+  case Quit:
+  case System:
+  case Timer:
     break;
 
   default:
-    if ((event.getFlags() & kDontFreeData) == 0) {
+    if ((event.getFlags() & EventFlags::DontFreeData) == 0) {
       free(event.getData());
       delete event.getDataObject();
     }

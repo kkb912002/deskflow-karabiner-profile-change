@@ -26,47 +26,44 @@ class EventQueueTimer
 namespace deskflow {
 
 EiEventQueueBuffer::EiEventQueueBuffer(const EiScreen *screen, ei *ei, IEventQueue *events)
-    : ei_(ei_ref(ei)),
-      events_(events)
+    : m_ei{ei_ref(ei)},
+      m_events{events}
 {
   // We need a pipe to signal ourselves when addEvent() is called
   int pipefd[2];
   int result = pipe2(pipefd, O_NONBLOCK);
   assert(result == 0);
 
-  pipe_r_ = pipefd[0];
-  pipe_w_ = pipefd[1];
+  m_pipeRead = pipefd[0];
+  m_pipeWrite = pipefd[1];
 }
 
 EiEventQueueBuffer::~EiEventQueueBuffer()
 {
-  ei_unref(ei_);
-  close(pipe_r_);
-  close(pipe_w_);
+  ei_unref(m_ei);
+  close(m_pipeRead);
+  close(m_pipeWrite);
 }
 
 void EiEventQueueBuffer::waitForEvent(double timeout_in_ms)
 {
   Thread::testCancel();
 
-  enum
-  {
-    EIFD,
-    PIPEFD,
-    POLLFD_COUNT, // Last element
-  };
+  static const auto s_eiFd = 0;
+  static const auto s_pipeFd = 1;
+  static const auto s_pollFdCount = 2;
 
-  struct pollfd pfds[POLLFD_COUNT];
-  pfds[EIFD].fd = ei_get_fd(ei_);
-  pfds[EIFD].events = POLLIN;
-  pfds[PIPEFD].fd = pipe_r_;
-  pfds[PIPEFD].events = POLLIN;
+  struct pollfd pfds[s_pollFdCount];
+  pfds[s_eiFd].fd = ei_get_fd(m_ei);
+  pfds[s_eiFd].events = POLLIN;
+  pfds[s_pipeFd].fd = m_pipeRead;
+  pfds[s_pipeFd].events = POLLIN;
 
   int timeout = (timeout_in_ms < 0.0) ? -1 : static_cast<int>(1000.0 * timeout_in_ms);
 
-  if (int retval = poll(pfds, POLLFD_COUNT, timeout); retval > 0) {
-    if (pfds[EIFD].revents & POLLIN) {
-      std::lock_guard lock(mutex_);
+  if (int retval = poll(pfds, s_pollFdCount, timeout); retval > 0) {
+    if (pfds[s_eiFd].revents & POLLIN) {
+      std::scoped_lock lock{m_mutex};
 
       // libei doesn't allow ei_event_ref() because events are
       // supposed to be short-lived only. So instead, we create an nullptr-data
@@ -76,15 +73,15 @@ void EiEventQueueBuffer::waitForEvent(double timeout_in_ms)
       // all actual pending ei events. In theory this means that a
       // flood of ei events could starve the events added with
       // addEvents() but let's hope it doesn't come to that.
-      queue_.push({true, 0U});
+      m_queue.push({true, 0U});
     }
     // the pipefd data doesn't matter, it only exists to wake up the thread
     // and potentially testCancel
-    if (pfds[PIPEFD].revents & POLLIN) {
+    if (pfds[s_pipeFd].revents & POLLIN) {
       char buf[64];
       ssize_t total = 0;
       ssize_t result;
-      while ((result = read(pipe_r_, buf, sizeof(buf)) > 0)) {
+      while ((result = read(m_pipeRead, buf, sizeof(buf)) > 0)) {
         total += result;
       }
       LOG_DEBUG2("event queue read result: %d (total drained: %zd)", result, total);
@@ -108,28 +105,28 @@ IEventQueueBuffer::Type EiEventQueueBuffer::getEvent(Event &event, uint32_t &dat
   // we just have a "something happened" event on the ei fd and the rest is
   // handled by the EiScreen.
   //
-  std::lock_guard lock(mutex_);
-  auto pair = queue_.front();
-  queue_.pop();
+  std::scoped_lock lock{m_mutex};
+  auto pair = m_queue.front();
+  m_queue.pop();
 
   // if this an injected special event, just return the data and exit
   if (pair.first == false) {
     dataID = pair.second;
-    return kUser;
+    return IEventQueueBuffer::Type::User;
   }
 
-  event = Event(EventTypes::System, events_->getSystemTarget());
+  event = Event(EventTypes::System, m_events->getSystemTarget());
 
-  return kSystem;
+  return IEventQueueBuffer::Type::System;
 }
 
 bool EiEventQueueBuffer::addEvent(uint32_t dataID)
 {
-  std::lock_guard lock(mutex_);
-  queue_.push({false, dataID});
+  std::scoped_lock lock{m_mutex};
+  m_queue.push({false, dataID});
 
   // tickle the pipe so our read thread wakes up
-  auto result = write(pipe_w_, "!", 1);
+  auto result = write(m_pipeWrite, "!", 1);
   LOG_DEBUG2("event queue write result: %d", result);
 
   return true;
@@ -137,9 +134,9 @@ bool EiEventQueueBuffer::addEvent(uint32_t dataID)
 
 bool EiEventQueueBuffer::isEmpty() const
 {
-  std::lock_guard lock(mutex_);
+  std::scoped_lock lock{m_mutex};
 
-  return queue_.empty();
+  return m_queue.empty();
 }
 
 EventQueueTimer *EiEventQueueBuffer::newTimer(double duration, bool oneShot) const

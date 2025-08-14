@@ -26,13 +26,21 @@ macro(configure_libs)
 
   # Define the location of Qt deployment tool
   if(WIN32)
-    if (CMAKE_BUILD_TYPE STREQUAL "Debug" AND NOT VCPKG_INSTALL_DIR STREQUAL "")
-      find_program(DEPLOYQT windeployqt.debug.bat)
+    if (CMAKE_BUILD_TYPE STREQUAL "Debug" AND VCPKG_QT)
+      set(DEPLOY_TOOL windeployqt.debug.bat)
     else()
-      find_program(DEPLOYQT windeployqt)
+      set(DEPLOY_TOOL windeployqt)
     endif()
   elseif(APPLE)
-      find_program(DEPLOYQT macdeployqt)
+      set(DEPLOY_TOOL macdeployqt)
+  endif()
+
+  if (WIN32 OR APPLE)
+    find_program(DEPLOYQT ${DEPLOY_TOOL})
+    if(DEPLOYQT STREQUAL "DEPLOYQT-NOTFOUND")
+      message(FATAL_ERROR "Unable to locate the Qt Deploy Tool: \"${DEPLOY_TOOL}\"")
+    endif()
+    unset(DEPLOY_TOOL)
   endif()
 
   set(CMAKE_AUTOMOC ON)
@@ -82,12 +90,17 @@ macro(configure_unix_libs)
   include(CheckSymbolExists)
   include(CheckCSourceCompiles)
 
-  check_include_files(sys/select.h HAVE_SYS_SELECT_H)
   check_include_files(sys/socket.h HAVE_SYS_SOCKET_H)
-  check_include_files(sys/time.h HAVE_SYS_TIME_H)
-  check_include_files(unistd.h HAVE_UNISTD_H)
+  if (NOT HAVE_SYS_SOCKET_H)
+    message(FATAL_ERROR "Missing header: sys/socket.h")
+  endif()
 
-  check_function_exists(nanosleep HAVE_NANOSLEEP)
+
+  check_include_files(unistd.h HAVE_UNISTD_H)
+  if (NOT HAVE_UNISTD_H)
+    message(FATAL_ERROR "Missing unistd.h")
+  endif()
+
   check_function_exists(sigwait HAVE_POSIX_SIGWAIT)
   check_function_exists(inet_aton HAVE_INET_ATON)
 
@@ -154,15 +167,6 @@ macro(configure_unix_libs)
     endif()
   endif()
 
-  # For config.h, set some static values; it may be a good idea to make these
-  # values dynamic for non-standard UNIX compilers.
-  set(HAVE_PTHREAD_SIGNAL 1)
-  set(SELECT_TYPE_ARG1 int)
-  set(SELECT_TYPE_ARG234 " (fd_set *)")
-  set(SELECT_TYPE_ARG5 " (struct timeval *)")
-  set(TIME_WITH_SYS_TIME 1)
-  set(HAVE_SOCKLEN_T 1)
-
   # Unix only: For config.h, save the results based on a template (config.h.in).
   # Note that this won't work on Windows because filenames are not case sensitive,
   # and we have header files named "Config.h" (upper case 'C').
@@ -195,11 +199,6 @@ macro(configure_xorg_libs)
   check_include_files("X11/extensions/XTest.h" HAVE_X11_EXTENSIONS_XTEST_H)
   check_include_files("${XKBlib}" HAVE_X11_XKBLIB_H)
   check_include_files("X11/extensions/XInput2.h" HAVE_XI2)
-
-  if(HAVE_X11_EXTENSIONS_DPMS_H)
-    # Assume that function prototypes declared, when include exists.
-    set(HAVE_DPMS_PROTOTYPES 1)
-  endif()
 
   if(NOT HAVE_X11_XKBLIB_H)
     message(FATAL_ERROR "Missing header: " ${XKBlib})

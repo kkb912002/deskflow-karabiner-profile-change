@@ -14,10 +14,7 @@
 #include <fstream>
 #include <iostream>
 
-enum EFileLogOutputter
-{
-  kFileSizeLimit = 1024 // kb
-};
+constexpr auto s_logFileSizeLimit = 1024 * 1024; //!< Max Log size before rotating (1Mb)
 
 //
 // StopLogOutputter
@@ -38,7 +35,7 @@ void StopLogOutputter::show(bool)
   // do nothing
 }
 
-bool StopLogOutputter::write(ELevel, const char *)
+bool StopLogOutputter::write(LogLevel, const char *)
 {
   return false;
 }
@@ -62,9 +59,9 @@ void ConsoleLogOutputter::show(bool showIfEmpty)
   // do nothing
 }
 
-bool ConsoleLogOutputter::write(ELevel level, const char *msg)
+bool ConsoleLogOutputter::write(LogLevel level, const char *msg)
 {
-  if ((level >= kFATAL) && (level <= kWARNING))
+  if ((level >= LogLevel::Fatal) && (level <= LogLevel::Warning))
     std::cerr << msg << std::endl;
   else
     std::cout << msg << std::endl;
@@ -96,7 +93,7 @@ void SystemLogOutputter::show(bool showIfEmpty)
   ARCH->showLog(showIfEmpty);
 }
 
-bool SystemLogOutputter::write(ELevel level, const char *msg)
+bool SystemLogOutputter::write(LogLevel level, const char *msg)
 {
   ARCH->writeLog(level, msg);
   return true;
@@ -143,7 +140,7 @@ void FileLogOutputter::setLogFilename(const char *logFile)
   m_fileName = logFile;
 }
 
-bool FileLogOutputter::write(ELevel level, const char *message)
+bool FileLogOutputter::write(LogLevel level, const char *message)
 {
   bool moveFile = false;
 
@@ -154,7 +151,7 @@ bool FileLogOutputter::write(ELevel level, const char *message)
 
     // when file size exceeds limits, move to 'old log' filename.
     size_t p = m_handle.tellp();
-    if (p > (kFileSizeLimit * 1024)) {
+    if (p > s_logFileSizeLimit) {
       moveFile = true;
     }
   }

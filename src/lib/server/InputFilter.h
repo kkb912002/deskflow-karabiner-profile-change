@@ -1,5 +1,6 @@
 /*
  * Deskflow -- mouse and keyboard sharing utility
+ * SPDX-FileCopyrightText: (C) 2025 Deskflow Developers
  * SPDX-FileCopyrightText: (C) 2012 - 2016 Symless Ltd.
  * SPDX-FileCopyrightText: (C) 2005 Chris Schoeneman
  * SPDX-License-Identifier: GPL-2.0-only WITH LicenseRef-OpenSSL-Exception
@@ -25,11 +26,11 @@ public:
   // -------------------------------------------------------------------------
   // Input Filter Condition Classes
   // -------------------------------------------------------------------------
-  enum EFilterStatus
+  enum class FilterStatus
   {
-    kNoMatch,
-    kActivate,
-    kDeactivate
+    NoMatch,
+    Activate,
+    Deactivate
   };
 
   class Condition
@@ -41,7 +42,7 @@ public:
     virtual Condition *clone() const = 0;
     virtual std::string format() const = 0;
 
-    virtual EFilterStatus match(const Event &) = 0;
+    virtual FilterStatus match(const Event &) = 0;
 
     virtual void enablePrimary(PrimaryClient *);
     virtual void disablePrimary(PrimaryClient *);
@@ -61,7 +62,7 @@ public:
     // Condition overrides
     Condition *clone() const override;
     std::string format() const override;
-    EFilterStatus match(const Event &) override;
+    FilterStatus match(const Event &) override;
     void enablePrimary(PrimaryClient *) override;
     void disablePrimary(PrimaryClient *) override;
 
@@ -86,7 +87,7 @@ public:
     // Condition overrides
     Condition *clone() const override;
     std::string format() const override;
-    EFilterStatus match(const Event &) override;
+    FilterStatus match(const Event &) override;
 
   private:
     ButtonID m_button;
@@ -104,7 +105,7 @@ public:
     // Condition overrides
     Condition *clone() const override;
     std::string format() const override;
-    EFilterStatus match(const Event &) override;
+    FilterStatus match(const Event &) override;
 
   private:
     std::string m_screen;
@@ -196,9 +197,9 @@ public:
   class SwitchInDirectionAction : public Action
   {
   public:
-    SwitchInDirectionAction(IEventQueue *events, EDirection);
+    SwitchInDirectionAction(IEventQueue *events, Direction);
 
-    EDirection getDirection() const;
+    Direction getDirection() const;
 
     // Action overrides
     Action *clone() const override;
@@ -206,7 +207,7 @@ public:
     void perform(const Event &) override;
 
   private:
-    EDirection m_direction;
+    Direction m_direction;
     IEventQueue *m_events;
   };
 
@@ -324,7 +325,7 @@ public:
     void disable(PrimaryClient *);
 
     // event handling
-    bool handleEvent(const Event &);
+    bool handleEvent(const Event &e);
 
     // convert rule to a string
     std::string format() const;
@@ -387,7 +388,7 @@ public:
 
 private:
   // event handling
-  void handleEvent(const Event &, void *);
+  void handleEvent(const Event &);
 
 private:
   RuleList m_ruleList;

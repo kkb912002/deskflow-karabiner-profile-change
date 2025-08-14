@@ -11,29 +11,9 @@
 #include "arch/IArchNetwork.h"
 
 #include <memory>
-
-#if HAVE_SYS_TYPES_H
-#include <sys/types.h>
-#endif
-
-#if HAVE_SYS_SOCKET_H
-#include <sys/socket.h>
-#else
-struct sockaddr_storage
-{
-  unsigned char ss_len;    /* address length */
-  unsigned char ss_family; /* [XSI] address family */
-  char __ss_pad1[_SS_PAD1SIZE];
-  long long __ss_align; /* force structure storage alignment */
-  char __ss_pad2[_SS_PAD2SIZE];
-};
-#endif
-
-#if !HAVE_SOCKLEN_T
-using socklen_t = int;
-#endif
-
+#include <mutex>
 #include <poll.h>
+#include <sys/socket.h>
 
 #define ARCH_NETWORK ArchNetworkBSD
 #define TYPED_ADDR(type_, addr_) (reinterpret_cast<type_ *>(&addr_->m_addr))
@@ -83,7 +63,7 @@ public:
   }
   ArchNetworkBSD(ArchNetworkBSD const &) = delete;
   ArchNetworkBSD(ArchNetworkBSD &&) = delete;
-  ~ArchNetworkBSD() override;
+  ~ArchNetworkBSD() override = default;
 
   ArchNetworkBSD &operator=(ArchNetworkBSD const &) = delete;
   ArchNetworkBSD &operator=(ArchNetworkBSD &&) = delete;
@@ -91,7 +71,7 @@ public:
   void init() override;
 
   // IArchNetwork overrides
-  ArchSocket newSocket(EAddressFamily, ESocketType) override;
+  ArchSocket newSocket(AddressFamily, SocketType) override;
   ArchSocket copySocket(ArchSocket s) override;
   void closeSocket(ArchSocket s) override;
   void closeSocketForRead(ArchSocket s) override;
@@ -108,13 +88,13 @@ public:
   bool setNoDelayOnSocket(ArchSocket, bool noDelay) override;
   bool setReuseAddrOnSocket(ArchSocket, bool reuse) override;
   std::string getHostName() override;
-  ArchNetAddress newAnyAddr(EAddressFamily) override;
+  ArchNetAddress newAnyAddr(AddressFamily) override;
   ArchNetAddress copyAddr(ArchNetAddress) override;
   std::vector<ArchNetAddress> nameToAddr(const std::string &) override;
   void closeAddr(ArchNetAddress) override;
   std::string addrToName(ArchNetAddress) override;
   std::string addrToString(ArchNetAddress) override;
-  EAddressFamily getAddrFamily(ArchNetAddress) override;
+  AddressFamily getAddrFamily(ArchNetAddress) override;
   void setAddrPort(ArchNetAddress, int port) override;
   int getAddrPort(ArchNetAddress) override;
   bool isAnyAddr(ArchNetAddress) override;
@@ -124,10 +104,9 @@ private:
   const int *getUnblockPipe();
   const int *getUnblockPipeForThread(ArchThread);
   void setBlockingOnSocket(int fd, bool blocking) const;
-  void throwError(int) const;
-  void throwNameError(int) const;
+  [[noreturn]] void throwError(int) const override;
+  [[noreturn]] void throwNameError(int) const override;
 
-private:
   std::shared_ptr<Deps> m_pDeps;
-  ArchMutex m_mutex{};
+  std::mutex m_mutex;
 };

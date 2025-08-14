@@ -12,7 +12,7 @@
 // XSocketAddress
 //
 
-XSocketAddress::XSocketAddress(EError error, const std::string &hostname, int port) throw()
+XSocketAddress::XSocketAddress(SocketError error, const std::string &hostname, int port) noexcept
     : m_error(error),
       m_hostname(hostname),
       m_port(port)
@@ -20,17 +20,17 @@ XSocketAddress::XSocketAddress(EError error, const std::string &hostname, int po
   // do nothing
 }
 
-XSocketAddress::EError XSocketAddress::getError() const throw()
+XSocketAddress::SocketError XSocketAddress::getError() const noexcept
 {
   return m_error;
 }
 
-std::string XSocketAddress::getHostname() const throw()
+std::string XSocketAddress::getHostname() const noexcept
 {
   return m_hostname;
 }
 
-int XSocketAddress::getPort() const throw()
+int XSocketAddress::getPort() const noexcept
 {
   return m_port;
 }
@@ -46,8 +46,9 @@ std::string XSocketAddress::getWhat() const throw()
       "unsupported address for: %{1}",
       "invalid port" // m_port may not be set to the bad port
   };
+  const auto index = static_cast<int>(m_error);
   return format(
-      s_errorID[m_error], s_errorMsg[m_error], m_hostname.c_str(), deskflow::string::sprintf("%d", m_port).c_str()
+      s_errorID[index], s_errorMsg[index], m_hostname.c_str(), deskflow::string::sprintf("%d", m_port).c_str()
   );
 }
 
@@ -67,6 +68,15 @@ std::string XSocketIOClose::getWhat() const throw()
 std::string XSocketBind::getWhat() const throw()
 {
   return format("XSocketBind", "cannot bind address: %{1}", what());
+}
+
+//
+// XSocketAddressInUse
+//
+
+std::string XSocketAddressInUse::getWhat() const throw()
+{
+  return format("XSocketAddressInUse", "cannot bind address: %{1}", what());
 }
 
 //

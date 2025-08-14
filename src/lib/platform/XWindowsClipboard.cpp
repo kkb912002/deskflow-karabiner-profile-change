@@ -814,7 +814,7 @@ void XWindowsClipboard::insertReply(Reply *reply)
   // find the right reply when handling property notify events we stick
   // to just the requestor.
 
-  const bool newWindow = (m_replies.count(reply->m_requestor) == 0);
+  const bool newWindow = !m_replies.contains(reply->m_requestor);
   m_replies[reply->m_requestor].push_back(reply);
 
   // adjust requestor's event mask if we haven't done so already.  we
@@ -990,7 +990,7 @@ bool XWindowsClipboard::sendReply(Reply *reply)
   reply->m_replied = true;
 
   // nothing to log
-  if (CLOG->getFilter() < kDEBUG2) {
+  if (CLOG->getFilter() < LogLevel::Debug2) {
     sendNotify(
         reply->m_requestor, m_selection, reply->m_target, reply->m_property, static_cast<unsigned int>(reply->m_time)
     );
@@ -1232,7 +1232,7 @@ bool XWindowsClipboard::CICCCMGetClipboard::readClipboard(
         }
       }
     } else {
-      ARCH->sleep(0.01);
+      Arch::sleep(0.01);
     }
   }
 
@@ -1381,12 +1381,9 @@ XWindowsClipboard::Reply::Reply(
       m_target(target),
       m_time(time),
       m_property(property),
-      m_replied(false),
-      m_done(false),
       m_data(data),
       m_type(type),
-      m_format(format),
-      m_ptr(0)
+      m_format(format)
 {
   // do nothing
 }

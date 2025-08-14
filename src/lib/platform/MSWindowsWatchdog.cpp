@@ -8,8 +8,8 @@
 
 #include "arch/Arch.h"
 #include "arch/win32/XArchWindows.h"
-#include "base/ELevel.h"
 #include "base/Log.h"
+#include "base/LogLevel.h"
 #include "base/LogOutputters.h"
 #include "base/TMethodJob.h"
 #include "common/Constants.h"
@@ -196,7 +196,7 @@ void MSWindowsWatchdog::mainLoop(void *)
 
     case StartScheduled: {
       LOG_DEBUG3("watchdog process start scheduled");
-      if (m_nextStartTime.has_value() && m_nextStartTime.value() <= ARCH->time()) {
+      if (m_nextStartTime.has_value() && m_nextStartTime.value() <= Arch::time()) {
         LOG_DEBUG("start time reached, queueing process start");
         m_processState = StartPending;
       }
@@ -241,7 +241,7 @@ void MSWindowsWatchdog::mainLoop(void *)
 
     // Sleep for only 100ms rather than 1 second so that the service can shut down faster.
     LOG_DEBUG3("watchdog main loop sleeping");
-    ARCH->sleep(0.1);
+    Arch::sleep(0.1);
   }
 
   LOG_DEBUG("watchdog main loop finished");
@@ -309,7 +309,7 @@ void MSWindowsWatchdog::startProcess()
   } else {
     // Wait for program to fail. This needs to be 1 second, as the process may take some time to fail.
     LOG_DEBUG("watchdog waiting for process start result");
-    ARCH->sleep(1);
+    Arch::sleep(1);
 
     if (!isProcessRunning()) {
       m_process.reset();
@@ -327,7 +327,7 @@ void MSWindowsWatchdog::startProcess()
 void MSWindowsWatchdog::setProcessConfig(const std::string_view &command, bool elevate)
 {
   LOG_DEBUG1("locking process state mutex for watchdog config change");
-  std::lock_guard lock(m_processStateMutex);
+  std::scoped_lock lock{m_processStateMutex};
 
   LOG_DEBUG("setting watchdog process config");
   m_command = command;
@@ -357,13 +357,13 @@ void MSWindowsWatchdog::outputLoop(void *)
 
     if (!success || bytesRead == 0) {
       // Sleep for only 100ms rather than 1 second so that the service can shut down faster.
-      ARCH->sleep(0.1);
+      Arch::sleep(0.1);
     } else {
       buffer[bytesRead] = '\0';
 
       // strip out windows \r chars to prevent extra lines in log file.
       std::string output = trimOutputBuffer(buffer);
-      m_fileLogOutputter.write(kPRINT, output.c_str());
+      m_fileLogOutputter.write(LogLevel::Print, output.c_str());
 
 #if SYSAPI_WIN32
       if (m_foreground) {
@@ -442,7 +442,7 @@ MSWindowsWatchdog::ProcessState MSWindowsWatchdog::handleStartError(const std::s
 
   // When there has been more than one consecutive failure, slow down the retry rate.
   if (m_startFailures > 1) {
-    m_nextStartTime = ARCH->time() + kStartDelaySeconds;
+    m_nextStartTime = Arch::time() + kStartDelaySeconds;
     LOG_WARN("start failed %d times, delaying start", m_startFailures);
     LOG_DEBUG("start delay, seconds=%d, time=%f", kStartDelaySeconds, m_nextStartTime.value());
     return ProcessState::StartScheduled;
@@ -524,7 +524,7 @@ void MSWindowsWatchdog::sasLoop(void *) // NOSONAR - Thread entry point signatur
   while (m_running) {
     if (m_processState != ProcessState::Running) {
       LOG_DEBUG2("watchdog not running, skipping SendSAS");
-      ARCH->sleep(1);
+      Arch::sleep(1);
       continue;
     }
 
@@ -532,7 +532,7 @@ void MSWindowsWatchdog::sasLoop(void *) // NOSONAR - Thread entry point signatur
     MSWindowsHandle sendSasEvent(CreateEvent(nullptr, FALSE, FALSE, kSendSasEventName));
     if (sendSasEvent.get() == nullptr) {
       LOG_ERR("could not create SAS event, error: %s", windowsErrorToString(GetLastError()).c_str());
-      ARCH->sleep(1);
+      Arch::sleep(1);
       continue;
     }
 

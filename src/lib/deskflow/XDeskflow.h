@@ -9,26 +9,35 @@
 
 #include "base/XBase.h"
 
-//! Generic deskflow exception
-XBASE_SUBCLASS(XDeskflow, XBase);
+/**
+ * @brief The XDeskflow class Generic deskflow exception class
+ */
+class XDeskflow : public XBase
+{
+  using XBase::XBase;
+};
 
-//! Subscription error
-/*!
-Thrown when there is a problem with the subscription.
-*/
-XBASE_SUBCLASS(XSubscription, XDeskflow);
+/**
+ * @brief XBadClient - Thrown when the client fails to follow the protocol.
+ */
+class XBadClient : public XDeskflow
+{
+  using XDeskflow::XDeskflow;
 
-//! Client error exception
-/*!
-Thrown when the client fails to follow the protocol.
-*/
-XBASE_SUBCLASS_WHAT(XBadClient, XDeskflow);
+protected:
+  std::string getWhat() const throw() override;
+};
 
-//! Server protocol error
-/*!
-Thrown when the server protocol is unrecognized.
-*/
-XBASE_SUBCLASS_WHAT(XInvalidProtocol, XDeskflow);
+/**
+ * @brief XInvalidProtocol - Thrown when the server protocol is unreconized.
+ */
+class XInvalidProtocol : public XDeskflow
+{
+  using XDeskflow::XDeskflow;
+
+protected:
+  std::string getWhat() const throw() override;
+};
 
 //! Incompatible client exception
 /*!
@@ -43,9 +52,9 @@ public:
   //@{
 
   //! Get client's major version number
-  int getMajor() const throw();
+  int getMajor() const noexcept;
   //! Get client's minor version number
-  int getMinor() const throw();
+  int getMinor() const noexcept;
 
   //@}
 
@@ -72,7 +81,7 @@ public:
   //@{
 
   //! Get client's name
-  virtual const std::string &getName() const throw();
+  virtual const std::string &getName() const noexcept;
 
   //@}
 
@@ -98,7 +107,7 @@ public:
   //@{
 
   //! Get the client's name
-  virtual const std::string &getName() const throw();
+  virtual const std::string &getName() const noexcept;
 
   //@}
 
@@ -122,7 +131,7 @@ public:
   ~XExitApp() throw() override = default;
 
   //! Get the exit code
-  int getCode() const throw();
+  int getCode() const noexcept;
 
 protected:
   std::string getWhat() const throw() override;

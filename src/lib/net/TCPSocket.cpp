@@ -9,7 +9,6 @@
 
 #include "arch/Arch.h"
 #include "arch/XArch.h"
-#include "base/IEventJob.h"
 #include "base/IEventQueue.h"
 #include "base/Log.h"
 #include "mt/Lock.h"
@@ -22,20 +21,20 @@
 #include <cstring>
 #include <memory>
 
-static const std::size_t MAX_INPUT_BUFFER_SIZE = 1024 * 1024;
+static const std::size_t s_maxInputBufferSize = 1024 * 1024;
 
 //
 // TCPSocket
 //
 
-TCPSocket::TCPSocket(IEventQueue *events, SocketMultiplexer *socketMultiplexer, IArchNetwork::EAddressFamily family)
+TCPSocket::TCPSocket(IEventQueue *events, SocketMultiplexer *socketMultiplexer, IArchNetwork::AddressFamily family)
     : IDataSocket(events),
       m_events(events),
       m_flushed(&m_mutex, true),
       m_socketMultiplexer(socketMultiplexer)
 {
   try {
-    m_socket = ARCH->newSocket(family, IArchNetwork::kSTREAM);
+    m_socket = ARCH->newSocket(family, IArchNetwork::SocketType::Stream);
   } catch (const XArchNetwork &e) {
     throw XSocketCreate(e.what());
   }
@@ -297,7 +296,7 @@ void TCPSocket::init()
   }
 }
 
-TCPSocket::EJobResult TCPSocket::doRead()
+TCPSocket::JobResult TCPSocket::doRead()
 {
   uint8_t buffer[4096];
   memset(buffer, 0, sizeof(buffer));
@@ -312,7 +311,7 @@ TCPSocket::EJobResult TCPSocket::doRead()
     do {
       m_inputBuffer.write(buffer, static_cast<uint32_t>(bytesRead));
 
-      if (m_inputBuffer.getSize() > MAX_INPUT_BUFFER_SIZE) {
+      if (m_inputBuffer.getSize() > s_maxInputBufferSize) {
         break;
       }
 
@@ -333,13 +332,13 @@ TCPSocket::EJobResult TCPSocket::doRead()
       m_connected = false;
     }
     m_readable = false;
-    return kNew;
+    return JobResult::New;
   }
 
-  return kRetry;
+  return JobResult::Retry;
 }
 
-TCPSocket::EJobResult TCPSocket::doWrite()
+TCPSocket::JobResult TCPSocket::doWrite()
 {
   // write data
   uint32_t bufferSize = 0;
@@ -351,10 +350,10 @@ TCPSocket::EJobResult TCPSocket::doWrite()
 
   if (bytesWrote > 0) {
     discardWrittenData(bytesWrote);
-    return kNew;
+    return JobResult::New;
   }
 
-  return kRetry;
+  return JobResult::Retry;
 }
 
 void TCPSocket::setJob(ISocketMultiplexerJob *job)
@@ -394,7 +393,9 @@ ISocketMultiplexerJob *TCPSocket::newJob()
 void TCPSocket::sendConnectionFailedEvent(const char *msg)
 {
   auto *info = new ConnectionFailedInfo(msg);
-  m_events->addEvent(Event(EventTypes::DataSocketConnectionFailed, getEventTarget(), info, Event::kDontFreeData));
+  m_events->addEvent(
+      Event(EventTypes::DataSocketConnectionFailed, getEventTarget(), info, Event::EventFlags::DontFreeData)
+  );
 }
 
 void TCPSocket::sendEvent(EventTypes type)
@@ -486,60 +487,66 @@ ISocketMultiplexerJob *TCPSocket::serviceConnecting(ISocketMultiplexerJob *job, 
 
 ISocketMultiplexerJob *TCPSocket::serviceConnected(ISocketMultiplexerJob *job, bool read, bool write, bool error)
 {
+  using enum EventTypes;
+  using enum JobResult;
   Lock lock(&m_mutex);
 
   if (error) {
-    sendEvent(EventTypes::SocketDisconnected);
+    sendEvent(SocketDisconnected);
     onDisconnected();
     return newJob();
   }
 
-  EJobResult result = kRetry;
+  JobResult readResult = Retry;
+  JobResult writeResult = Retry;
+
   if (write) {
     try {
-      result = doWrite();
+      writeResult = doWrite();
     } catch (XArchNetworkShutdown &) {
       // remote read end of stream hungup.  our output side
       // has therefore shutdown.
       onOutputShutdown();
-      sendEvent(EventTypes::StreamOutputShutdown);
+      sendEvent(StreamOutputShutdown);
       if (!m_readable && m_inputBuffer.getSize() == 0) {
-        sendEvent(EventTypes::SocketDisconnected);
+        sendEvent(SocketDisconnected);
         m_connected = false;
       }
-      result = kNew;
+      writeResult = New;
     } catch (XArchNetworkDisconnected &) {
       // stream hungup
       onDisconnected();
-      sendEvent(EventTypes::SocketDisconnected);
-      result = kNew;
+      sendEvent(SocketDisconnected);
+      writeResult = New;
     } catch (XArchNetwork &e) {
       // other write error
       LOG((CLOG_WARN "error writing socket: %s", e.what()));
       onDisconnected();
-      sendEvent(EventTypes::StreamOutputError);
-      sendEvent(EventTypes::SocketDisconnected);
-      result = kNew;
+      sendEvent(StreamOutputError);
+      sendEvent(SocketDisconnected);
+      writeResult = New;
     }
   }
 
   if (read && m_readable) {
     try {
-      result = doRead();
+      readResult = doRead();
     } catch (XArchNetworkDisconnected &) {
       // stream hungup
-      sendEvent(EventTypes::SocketDisconnected);
+      sendEvent(SocketDisconnected);
       onDisconnected();
-      result = kNew;
+      readResult = New;
     } catch (XArchNetwork &e) {
       // ignore other read error
       LOG((CLOG_WARN "error reading socket: %s", e.what()));
     }
   }
 
-  if (result == kBreak) {
+  if (readResult == Break || writeResult == Break)
     return nullptr;
-  }
 
-  return result == kNew ? newJob() : job;
+  if (writeResult == New || readResult == New)
+    return newJob();
+
+  return job;
 }

@@ -51,7 +51,7 @@ IEventQueueBuffer::Type OSXEventQueueBuffer::getEvent(Event &event, uint32_t &da
   std::unique_lock lock(m_mutex);
   if (m_dataQueue.empty()) {
     LOG_DEBUG2("no events in queue");
-    return kNone;
+    return IEventQueueBuffer::Type::Unknown;
   }
 
   dataID = m_dataQueue.front();
@@ -59,14 +59,14 @@ IEventQueueBuffer::Type OSXEventQueueBuffer::getEvent(Event &event, uint32_t &da
   lock.unlock(); // Unlock early to allow other threads to proceed
 
   LOG_DEBUG2("handled user event with dataID: %u", dataID);
-  return kUser;
+  return IEventQueueBuffer::Type::User;
 }
 
 bool OSXEventQueueBuffer::addEvent(uint32_t dataID)
 {
   // Use GCD to dispatch event addition on the main queue
   dispatch_async(dispatch_get_main_queue(), ^{
-    std::lock_guard lock(this->m_mutex);
+    std::scoped_lock lock{this->m_mutex};
     LOG_DEBUG2("adding user event with dataID: %u", dataID);
     this->m_dataQueue.push(dataID);
     this->m_cond.notify_one();
@@ -79,7 +79,7 @@ bool OSXEventQueueBuffer::addEvent(uint32_t dataID)
 
 bool OSXEventQueueBuffer::isEmpty() const
 {
-  std::lock_guard lock(m_mutex);
+  std::scoped_lock lock{m_mutex};
   bool empty = m_dataQueue.empty();
   LOG_DEBUG2("queue is %s", empty ? "empty" : "not empty");
   return empty;

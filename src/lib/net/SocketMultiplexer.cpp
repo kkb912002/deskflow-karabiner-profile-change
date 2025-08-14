@@ -36,7 +36,8 @@ SocketMultiplexer::SocketMultiplexer()
   m_cursorMark = reinterpret_cast<ISocketMultiplexerJob *>(this);
 
   // start thread
-  m_thread = new Thread(new TMethodJob<SocketMultiplexer>(this, &SocketMultiplexer::serviceThread));
+  auto tMethodJob = new TMethodJob<SocketMultiplexer>(this, &SocketMultiplexer::serviceThread);
+  m_thread = new Thread(tMethodJob);
 }
 
 SocketMultiplexer::~SocketMultiplexer()
@@ -118,7 +119,7 @@ void SocketMultiplexer::removeSocket(ISocket *socket)
   unlockJobList();
 }
 
-void SocketMultiplexer::serviceThread(void *)
+[[noreturn]] void SocketMultiplexer::serviceThread(void *)
 {
   std::vector<IArchNetwork::PollEntry> pfds;
   IArchNetwork::PollEntry pfd;
@@ -152,10 +153,10 @@ void SocketMultiplexer::serviceThread(void *)
           pfd.m_socket = job->getSocket();
           pfd.m_events = 0;
           if (job->isReadable()) {
-            pfd.m_events |= IArchNetwork::kPOLLIN;
+            pfd.m_events |= IArchNetwork::PollEventMask::In;
           }
           if (job->isWritable()) {
-            pfd.m_events |= IArchNetwork::kPOLLOUT;
+            pfd.m_events |= IArchNetwork::PollEventMask::Out;
           }
           pfds.push_back(pfd);
         }
@@ -187,9 +188,10 @@ void SocketMultiplexer::serviceThread(void *)
         if (*jobCursor != nullptr) {
           // get poll state
           unsigned short revents = pfds[i].m_revents;
-          bool read = ((revents & IArchNetwork::kPOLLIN) != 0);
-          bool write = ((revents & IArchNetwork::kPOLLOUT) != 0);
-          bool error = ((revents & (IArchNetwork::kPOLLERR | IArchNetwork::kPOLLNVAL)) != 0);
+          bool read = ((revents & int(IArchNetwork::PollEventMask::In)) != 0);
+          bool write = ((revents & int(IArchNetwork::PollEventMask::Out)) != 0);
+          bool error =
+              ((revents & (int(IArchNetwork::PollEventMask::Error) | int(IArchNetwork::PollEventMask::Invalid))) != 0);
 
           // run job
           ISocketMultiplexerJob *job = *jobCursor;

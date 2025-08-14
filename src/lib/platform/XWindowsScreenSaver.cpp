@@ -1,5 +1,6 @@
 /*
  * Deskflow -- mouse and keyboard sharing utility
+ * SPDX-FileCopyrightText: (C) 2025 Deskflow Developers
  * SPDX-FileCopyrightText: (C) 2012 - 2016 Symless Ltd.
  * SPDX-FileCopyrightText: (C) 2002 Chris Schoeneman
  * SPDX-License-Identifier: GPL-2.0-only WITH LicenseRef-OpenSSL-Exception
@@ -10,7 +11,6 @@
 #include "base/Event.h"
 #include "base/IEventQueue.h"
 #include "base/Log.h"
-#include "base/TMethodEventJob.h"
 #include "deskflow/IPlatformScreen.h"
 #include "platform/XWindowsUtil.h"
 
@@ -25,22 +25,6 @@ extern "C"
 {
 #include <X11/Xmd.h>
 #include <X11/extensions/dpms.h>
-#if !HAVE_DPMS_PROTOTYPES
-#undef DPMSModeOn
-#undef DPMSModeStandby
-#undef DPMSModeSuspend
-#undef DPMSModeOff
-#define DPMSModeOn 0
-#define DPMSModeStandby 1
-#define DPMSModeSuspend 2
-#define DPMSModeOff 3
-  extern Bool DPMSQueryExtension(Display *, int *, int *);
-  extern Bool DPMSCapable(Display *);
-  extern Status DPMSEnable(Display *);
-  extern Status DPMSDisable(Display *);
-  extern Status DPMSForceLevel(Display *, CARD16);
-  extern Status DPMSInfo(Display *, CARD16 *, BOOL *);
-#endif
 }
 #endif
 
@@ -98,9 +82,7 @@ XWindowsScreenSaver::XWindowsScreenSaver(Display *display, Window window, void *
   }
 
   // install disable timer event handler
-  m_events->adoptHandler(
-      EventTypes::Timer, this, new TMethodEventJob<XWindowsScreenSaver>(this, &XWindowsScreenSaver::handleDisableTimer)
-  );
+  m_events->addHandler(EventTypes::Timer, this, [this](const auto &) { handleDisableTimer(); });
 }
 
 XWindowsScreenSaver::~XWindowsScreenSaver()
@@ -177,6 +159,8 @@ bool XWindowsScreenSaver::handleXEvent(const XEvent *xevent)
       setXScreenSaverActive(false);
       return true;
     }
+    break;
+  default:
     break;
   }
 
@@ -462,7 +446,7 @@ void XWindowsScreenSaver::updateDisableTimer()
   }
 }
 
-void XWindowsScreenSaver::handleDisableTimer(const Event &, void *)
+void XWindowsScreenSaver::handleDisableTimer()
 {
   // send fake mouse motion directly to xscreensaver
   if (m_xscreensaver != None) {

@@ -1,5 +1,6 @@
 /*
  * Deskflow -- mouse and keyboard sharing utility
+ * SPDX-FileCopyrightText: (C) 2025 Deskflow Developers
  * SPDX-FileCopyrightText: (C) 2012 - 2016 Symless Ltd.
  * SPDX-FileCopyrightText: (C) 2002 Chris Schoeneman
  * SPDX-License-Identifier: GPL-2.0-only WITH LicenseRef-OpenSSL-Exception
@@ -8,7 +9,6 @@
 #pragma once
 
 #include "base/Event.h"
-#include "base/Stopwatch.h"
 #include "deskflow/ClipboardTypes.h"
 #include "deskflow/KeyTypes.h"
 #include "deskflow/languages/LanguageManager.h"
@@ -52,14 +52,14 @@ public:
   //@}
 
 protected:
-  enum EResult
+  enum class ConnectionResult
   {
-    kOkay,
-    kUnknown,
-    kDisconnect
+    Okay,
+    Unknown,
+    Disconnect
   };
-  EResult parseHandshakeMessage(const uint8_t *code);
-  EResult parseMessage(const uint8_t *code);
+  ConnectionResult parseHandshakeMessage(const uint8_t *code);
+  ConnectionResult parseMessage(const uint8_t *code);
 
 private:
   // if compressing mouse motion then send the last motion now
@@ -75,8 +75,8 @@ private:
   KeyModifierMask translateModifierMask(KeyModifierMask) const;
 
   // event handlers
-  void handleData(const Event &, void *);
-  void handleKeepAliveAlarm(const Event &, void *);
+  void handleData();
+  void handleKeepAliveAlarm();
 
   // message handlers
   void enter();
@@ -96,14 +96,13 @@ private:
   void setOptions();
   void queryInfo();
   void infoAcknowledgment();
-  void handleClipboardSendingEvent(const Event &, void *);
   void secureInputNotification();
   void setServerLanguages();
   void setActiveServerLanguage(const std::string &language);
   void checkMissedLanguages() const;
 
 private:
-  using MessageParser = EResult (ServerProxy::*)(const uint8_t *);
+  using MessageParser = ConnectionResult (ServerProxy::*)(const uint8_t *);
 
   Client *m_client = nullptr;
   deskflow::IStream *m_stream = nullptr;
@@ -124,7 +123,7 @@ private:
   double m_keepAliveAlarm = 0.0;
   EventQueueTimer *m_keepAliveAlarmTimer = nullptr;
 
-  MessageParser m_parser;
+  MessageParser m_parser = &ServerProxy::parseHandshakeMessage;
   IEventQueue *m_events = nullptr;
   std::string m_serverLanguage = "";
   bool m_isUserNotifiedAboutLanguageSyncError = false;

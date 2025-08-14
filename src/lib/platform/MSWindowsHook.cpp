@@ -115,6 +115,11 @@ void MSWindowsHook::setSides(uint32_t sides)
   g_zoneSides = sides;
 }
 
+uint32_t MSWindowsHook::getSides()
+{
+  return g_zoneSides;
+}
+
 void MSWindowsHook::setZone(int32_t x, int32_t y, int32_t w, int32_t h, int32_t jumpZoneSize)
 {
   g_zoneSize = jumpZoneSize;
@@ -534,16 +539,17 @@ static bool mouseHookHandler(WPARAM wParam, int32_t x, int32_t y, int32_t data)
 
       // check for mouse inside jump zone
       bool inside = false;
-      if (!inside && (g_zoneSides & kLeftMask) != 0) {
+      using enum DirectionMask;
+      if (!inside && (g_zoneSides & static_cast<int>(LeftMask)) != 0) {
         inside = (x < g_xScreen + g_zoneSize);
       }
-      if (!inside && (g_zoneSides & kRightMask) != 0) {
+      if (!inside && (g_zoneSides & static_cast<int>(RightMask)) != 0) {
         inside = (x >= g_xScreen + g_wScreen - g_zoneSize);
       }
-      if (!inside && (g_zoneSides & kTopMask) != 0) {
+      if (!inside && (g_zoneSides & static_cast<int>(TopMask)) != 0) {
         inside = (y < g_yScreen + g_zoneSize);
       }
-      if (!inside && (g_zoneSides & kBottomMask) != 0) {
+      if (!inside && (g_zoneSides & static_cast<int>(BottomMask)) != 0) {
         inside = (y >= g_yScreen + g_hScreen - g_zoneSize);
       }
 

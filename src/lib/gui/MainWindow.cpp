@@ -11,6 +11,7 @@
 
 #include "Diagnostic.h"
 #include "StyleUtils.h"
+#include "VersionInfo.h"
 
 #include "dialogs/AboutDialog.h"
 #include "dialogs/FingerprintDialog.h"
@@ -32,7 +33,6 @@
 #include "Config.h"
 #endif
 
-#include <QApplication>
 #include <QDesktopServices>
 #include <QFileDialog>
 #include <QLocalServer>
@@ -84,13 +84,17 @@ MainWindow::MainWindow()
       m_actionRestartCore{new QAction(tr("Rest&art"), this)},
       m_actionStopCore{new QAction(tr("S&top"), this)}
 {
-  const auto themeName = QStringLiteral("deskflow-%1").arg(iconMode());
-  if (QIcon::themeName().isEmpty())
-    QIcon::setThemeName(themeName);
-  else
-    QIcon::setFallbackThemeName(themeName);
-
   ui->setupUi(this);
+
+  setWindowIcon(QIcon::fromTheme(QStringLiteral("deskflow")));
+
+  // setup the log font
+  ui->textLog->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
+#ifdef Q_OS_MAC
+  auto f = ui->textLog->font();
+  f.setPixelSize(12);
+  ui->textLog->setFont(f);
+#endif
 
   // Setup Actions
   m_actionAbout->setText(tr("About %1...").arg(kAppName));
@@ -151,6 +155,13 @@ MainWindow::MainWindow()
 
   // Force generation of SHA256 for the localhost
   if (Settings::value(Settings::Security::TlsEnabled).toBool()) {
+    if (Settings::value(Settings::Security::KeySize).toInt() < 2048) {
+      QMessageBox::information(
+          this, kAppName,
+          tr("Your current TLS key is smaller than the minimum allowed size, A new key 2048-bit key will be generated.")
+      );
+      regenerateLocalFingerprints();
+    }
     if (!QFile::exists(Settings::tlsLocalDb())) {
       regenerateLocalFingerprints();
       return;
@@ -321,6 +332,7 @@ void MainWindow::connectSlots()
 #endif
 
   connect(&m_serverConnection, &ServerConnection::configureClient, this, &MainWindow::serverConnectionConfigureClient);
+  connect(&m_serverConnection, &ServerConnection::clientsChanged, this, &MainWindow::serverClientsChanged);
 
   connect(&m_serverConnection, &ServerConnection::messageShowing, this, &MainWindow::showAndActivate);
   connect(&m_clientConnection, &ClientConnection::messageShowing, this, &MainWindow::showAndActivate);
@@ -722,7 +734,6 @@ void MainWindow::setIcon()
 {
   // Using a theme icon that is packed in exe renders an invisible icon
   // Instead use the resource path of the packed icon
-  // TODO Report to Qt ref the bug here
   const bool symbolicIcon = Settings::value(Settings::Gui::SymbolicTrayIcon).toBool();
 #ifndef Q_OS_MAC
   QString iconString = QStringLiteral(":/icons/deskflow-%1/apps/64/deskflow").arg(iconMode());
@@ -849,7 +860,7 @@ void MainWindow::closeEvent(QCloseEvent *event)
   }
 
   if (m_saveOnExit) {
-    Settings::setValue(Settings::Gui::WindowGeometry, frameGeometry());
+    Settings::setValue(Settings::Gui::WindowGeometry, geometry());
   }
   qDebug() << "quitting application";
   event->accept();
@@ -874,6 +885,7 @@ void MainWindow::updateStatus()
 {
   const auto connection = m_coreProcess.connectionState();
   const auto process = m_coreProcess.processState();
+  const bool isServer = (m_coreProcess.mode() == CoreMode::Server);
 
   updateSecurityIcon(false);
   switch (process) {
@@ -900,7 +912,7 @@ void MainWindow::updateStatus()
       using enum CoreConnectionState;
 
     case Listening: {
-      if (m_coreProcess.mode() == CoreMode::Server) {
+      if (isServer) {
         updateSecurityIcon(true);
         setStatus(tr("%1 is waiting for clients").arg(kAppName));
       }
@@ -914,7 +926,10 @@ void MainWindow::updateStatus()
 
     case Connected: {
       updateSecurityIcon(true);
-      setStatus(tr("%1 is connected").arg(kAppName));
+      if (!isServer) {
+        setStatus(tr("%1 is connected as client of %2")
+                      .arg(kAppName, Settings::value(Settings::Client::RemoteHost).toString()));
+      }
       break;
     }
 
@@ -1022,7 +1037,7 @@ void MainWindow::autoAddScreen(const QString &name)
   if (name.isEmpty())
     return;
 
-  if (m_serverConfig.autoAddScreen(name) == kAutoAddScreenManualClient) {
+  if (m_serverConfig.autoAddScreen(name) == AutoAddScreenManualClient) {
     showConfigureServer(
         tr("Please add the client (%1) to the grid.").arg(Settings::value(Settings::Core::ScreenName).toString())
     );
@@ -1138,6 +1153,37 @@ bool MainWindow::regenerateLocalFingerprints()
 
   updateLocalFingerprint();
   return true;
+}
+
+void MainWindow::serverClientsChanged(const QStringList &clients)
+{
+  if (m_coreProcess.mode() != CoreMode::Server || !m_coreProcess.isStarted())
+    return;
+
+  switch (clients.size()) {
+  case 0:
+    setStatus(tr("%1 is waiting for clients").arg(kAppName));
+    ui->statusBar->setToolTip("");
+    break;
+
+  case 1:
+    setStatus(tr("%1 is connected to a client: %2").arg(kAppName, clients.first()));
+    ui->statusBar->setToolTip("");
+    break;
+
+  case 2:
+  case 3:
+  case 4:
+    setStatus(
+        tr("%1 is connected, with %2 clients: %3").arg(kAppName, QString::number(clients.size()), clients.join(", "))
+    );
+    ui->statusBar->setToolTip(tr("Clients:\n %1").arg(clients.join("\n")));
+    break;
+  default:
+    setStatus(tr("%1 is connected, with %n client(s)", "", clients.size()).arg(kAppName));
+    ui->statusBar->setToolTip(tr("Clients:\n  %1").arg(clients.join("\n")));
+    break;
+  }
 }
 
 void MainWindow::daemonIpcClientConnectionFailed()

@@ -79,11 +79,17 @@ public:
   //! Update configuration
   /*!
   This is called when the configuration has changed.  \c activeSides
-  is a bitmask of EDirectionMask indicating which sides of the
+  is a bitmask of DirectionMask indicating which sides of the
   primary screen are linked to clients.  Override to handle the
   possible change in jump zones.
   */
   virtual void reconfigure(uint32_t activeSides) = 0;
+
+  /**
+   * @brief activeSides
+   * @return a bitmask of DirectionMask indicating which sides of the primary screen are linked to clients
+   */
+  virtual uint32_t activeSides() = 0;
 
   //! Warp cursor
   /*!

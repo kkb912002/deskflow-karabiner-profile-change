@@ -8,15 +8,11 @@
 #pragma once
 
 #include "base/IEventQueueBuffer.h"
-#include "mt/Mutex.h"
 
+#include <mutex>
 #include <vector>
 
-#if X_DISPLAY_MISSING
-#error X11 is required to build deskflow
-#else
 #include <X11/Xlib.h>
-#endif
 
 class IEventQueue;
 
@@ -35,6 +31,7 @@ public:
   // IEventQueueBuffer overrides
   void init() override
   {
+    // do nothing
   }
   void waitForEvent(double timeout) override;
   Type getEvent(Event &event, uint32_t &dataID) override;
@@ -51,7 +48,7 @@ private:
 private:
   using EventList = std::vector<XEvent>;
 
-  Mutex m_mutex;
+  mutable std::mutex m_mutex;
   Display *m_display;
   Window m_window;
   Atom m_userEvent;

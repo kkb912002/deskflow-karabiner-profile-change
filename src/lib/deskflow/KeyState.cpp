@@ -15,7 +15,7 @@
 #include <iterator>
 #include <list>
 
-static const KeyButton kButtonMask = (KeyButton)(IKeyState::kNumButtons - 1);
+static const KeyButton kButtonMask = (KeyButton)(IKeyState::s_numButtons - 1);
 
 static const KeyID s_decomposeTable[] = {
     // spacing version of dead keys
@@ -708,20 +708,21 @@ void KeyState::sendKeyEvent(
     void *target, bool press, bool isAutoRepeat, KeyID key, KeyModifierMask mask, int32_t count, KeyButton button
 )
 {
+  using enum EventTypes;
   if (m_keyMap.isHalfDuplex(key, button)) {
     if (isAutoRepeat) {
       // ignore auto-repeat on half-duplex keys
     } else {
-      m_events->addEvent(Event(EventTypes::KeyStateKeyDown, target, KeyInfo::alloc(key, mask, button, 1)));
-      m_events->addEvent(Event(EventTypes::KeyStateKeyUp, target, KeyInfo::alloc(key, mask, button, 1)));
+      m_events->addEvent(Event(KeyStateKeyDown, target, KeyInfo::alloc(key, mask, button, 1)));
+      m_events->addEvent(Event(KeyStateKeyUp, target, KeyInfo::alloc(key, mask, button, 1)));
     }
   } else {
     if (isAutoRepeat) {
-      m_events->addEvent(Event(EventTypes::KeyStateKeyRepeat, target, KeyInfo::alloc(key, mask, button, count)));
+      m_events->addEvent(Event(KeyStateKeyRepeat, target, KeyInfo::alloc(key, mask, button, count)));
     } else if (press) {
-      m_events->addEvent(Event(EventTypes::KeyStateKeyDown, target, KeyInfo::alloc(key, mask, button, 1)));
+      m_events->addEvent(Event(KeyStateKeyDown, target, KeyInfo::alloc(key, mask, button, 1)));
     } else {
-      m_events->addEvent(Event(EventTypes::KeyStateKeyUp, target, KeyInfo::alloc(key, mask, button, 1)));
+      m_events->addEvent(Event(KeyStateKeyUp, target, KeyInfo::alloc(key, mask, button, 1)));
     }
   }
 }
@@ -924,7 +925,7 @@ bool KeyState::fakeKeyUp(KeyButton serverID)
       ++i;
       m_activeModifiers.erase(tmp);
 
-      if (m_activeModifiers.count(mask) == 0) {
+      if (!m_activeModifiers.contains(mask)) {
         // no key for modifier is down so deactivate modifier
         m_mask &= ~mask;
         LOG((CLOG_DEBUG1 "new state %04x", m_mask));
@@ -942,7 +943,7 @@ bool KeyState::fakeKeyUp(KeyButton serverID)
 void KeyState::fakeAllKeysUp()
 {
   Keystrokes keys;
-  for (KeyButton i = 0; i < IKeyState::kNumButtons; ++i) {
+  for (KeyButton i = 0; i < IKeyState::s_numButtons; ++i) {
     if (m_syntheticKeys[i] > 0) {
       keys.push_back(Keystroke(i, false, false, m_keyClientData[i]));
       m_keys[i] = 0;
@@ -1027,7 +1028,7 @@ void KeyState::addKeypadEntries()
   // map every numpad key to its equivalent non-numpad key if it's not
   // on the keyboard.
   for (int32_t g = 0, n = m_keyMap.getNumGroups(); g < n; ++g) {
-    for (size_t i = 0; i < sizeof(s_numpadTable) / sizeof(s_numpadTable[0]); i += 2) {
+    for (size_t i = 0; i < std::size(s_numpadTable); i += 2) {
       m_keyMap.addKeyCombinationEntry(s_numpadTable[i], g, s_numpadTable + i + 1, 1);
     }
   }

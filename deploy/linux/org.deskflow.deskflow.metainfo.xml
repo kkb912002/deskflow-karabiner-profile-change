@@ -2,7 +2,7 @@
 <component type="desktop-application">
 	<id>org.deskflow.deskflow</id>
 	<metadata_license>CC0-1.0</metadata_license>
-	<project_license>GPL-2.0+</project_license>
+	<project_license>GPL-2.0-only</project_license>
 	<name>Deskflow</name>
 	<developer id="org.deskflow">
 		<name>Deskflow Developers</name>
@@ -16,6 +16,10 @@
 	<launchable type="desktop-id">org.deskflow.deskflow.desktop</launchable>
 	<url type="homepage">https://deskflow.org</url>
 	<url type="bugtracker">https://github.com/deskflow/deskflow/issues</url>
+	<url type="faq">https://github.com/deskflow/deskflow/wiki/Project-FAQ</url>
+	<url type="help">https://github.com/deskflow/deskflow/wiki#user-guides</url>
+	<url type="vcs-browser">https://github.com/deskflow/deskflow</url>
+	<url type="contribute">https://github.com/deskflow/deskflow/wiki/Contributing</url>
 	<screenshots>
 		<screenshot type="default">
 			<image>https://deskflow.org/screenshots/deskflow.png</image>
@@ -42,6 +46,26 @@
 	</branding>
 	<content_rating type="oars-1.0" />
 	<releases>
+		<release version="1.23.0" date="2025-07-23" urgency="high">
+			<description>
+				<p>This stable release fixes issues found in the previous version and adds a few new features. This release also uses more C++20 features. For the full changelog, see the release page.</p>
+				<ul>
+					<li>Fix: Core app not running when app starts minimized.</li>
+					<li>Fix: Several items in the server configuration dialog being enabled at the wrong time.</li>
+					<li>Fix: Use the correct license in our appstream data (GPL2.0 only).</li>
+					<li>Fix: Apps saved size could grow over time on desktops using client side decorations.</li>
+					<li>Fix: Use the system monospace font in the log area, instead of forcing one that may not be on the system.</li>
+					<li>Fix: Issue with incorrect borders being set for libEI, causing issues on edges without neighbors.</li>
+					<li>Feat: Add Restart action for the core process.</li>
+					<li>Feat: Remove defunct --no-xinitthreads option.</li>
+					<li>Feat: Make 2048 the minimum encryption key size.</li>
+					<li>Feat: Provide additional connection information in the status area.</li>
+					<li>Chore: Continue to update codebase to use C++20 features.</li>
+					<li>Chore: Clean more sonar smells</li>
+				</ul>
+			</description>
+			<url>https://github.com/deskflow/deskflow/releases/tag/v1.23.0</url>
+		</release>
 		<release version="1.22.0" date="2025-05-28" urgency="high">
 			<description>
 				<p>This stable release fixes a issues found in the previous version. For the full changelog see the release page.</p>
@@ -65,7 +89,7 @@
 				</ul>
 			</description>
 			<url>https://github.com/deskflow/deskflow/releases/tag/v1.22.0</url>
-		</release>/
+		</release>
 		<release version="1.21.2" date="2025-04-07" urgency="high">
 			<description>
 				<p>This stable release fixes a few critical bugs in 1.21.1. For the full changelog see the release page.</p>

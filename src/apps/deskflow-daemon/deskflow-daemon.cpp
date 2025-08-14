@@ -5,6 +5,7 @@
  * SPDX-License-Identifier: GPL-2.0-only WITH LicenseRef-OpenSSL-Exception
  */
 
+#include "VersionInfo.h"
 #include "arch/Arch.h"
 #include "base/EventQueue.h"
 #include "base/Log.h"
@@ -97,10 +98,10 @@ int main(int argc, char **argv)
 
     if (parser.isSet(installOption)) {
       daemon.install();
-      return kExitSuccess;
+      return s_exitSuccess;
     } else if (parser.isSet(uninstallOption)) {
       daemon.uninstall();
-      return kExitSuccess;
+      return s_exitSuccess;
     }
 
     const auto ipcServer =
@@ -120,10 +121,10 @@ int main(int argc, char **argv)
 
   } catch (std::exception &e) {
     handleError(e.what());
-    return kExitFailed;
+    return s_exitFailed;
   } catch (...) {
     handleError();
-    return kExitFailed;
+    return s_exitFailed;
   }
 }
 

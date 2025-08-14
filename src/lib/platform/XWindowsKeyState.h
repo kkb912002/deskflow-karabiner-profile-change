@@ -12,9 +12,6 @@
 #include <map>
 #include <vector>
 
-#if X_DISPLAY_MISSING
-#error X11 is required to build deskflow
-#else
 #include <X11/Xlib.h>
 #if HAVE_X11_EXTENSIONS_XTEST_H
 #include <X11/extensions/XTest.h>
@@ -23,7 +20,6 @@
 #endif
 #if HAVE_XKB_EXTENSION
 #include <X11/extensions/XKBstr.h>
-#endif
 #endif
 
 class IEventQueue;
@@ -36,11 +32,8 @@ class XWindowsKeyState : public KeyState
 {
 public:
   using KeycodeList = std::vector<int>;
-  enum
-  {
-    kGroupPoll = -1,
-    kGroupPollAndSet = -2
-  };
+  inline static const auto s_groupPoll = -1;
+  inline static const auto s_groupPollAndSet = -2;
 
   XWindowsKeyState(Display *, bool useXKB, IEventQueue *events);
   XWindowsKeyState(Display *, bool useXKB, IEventQueue *events, deskflow::KeyMap &keyMap);
@@ -52,9 +45,9 @@ public:
   //! Set active group
   /*!
   Sets the active group to \p group.  This is the group returned by
-  \c pollActiveGroup().  If \p group is \c kGroupPoll then
+  \c pollActiveGroup().  If \p group is \c s_groupPoll then
   \c pollActiveGroup() will really poll, but that's a slow operation
-  on X11.  If \p group is \c kGroupPollAndSet then this will poll the
+  on X11.  If \p group is \c s_groupPollAndSet then this will poll the
   active group now and use it for future calls to \c pollActiveGroup().
   */
   void setActiveGroup(int32_t group);

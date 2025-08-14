@@ -1,5 +1,6 @@
 /*
  * Deskflow -- mouse and keyboard sharing utility
+ * SPDX-FileCopyrightText: (C) 2025 Deskflow Developers.
  * SPDX-FileCopyrightText: (C) 2012 Symless Ltd.
  * SPDX-FileCopyrightText: (C) 2002 Chris Schoeneman
  * SPDX-License-Identifier: GPL-2.0-only WITH LicenseRef-OpenSSL-Exception
@@ -10,7 +11,6 @@
 #include "arch/Arch.h"
 #include "base/IEventQueue.h"
 #include "base/Log.h"
-#include "base/TMethodEventJob.h"
 #include "base/TMethodJob.h"
 #include "deskflow/AppUtil.h"
 #include "deskflow/IPlatformScreen.h"
@@ -27,6 +27,9 @@
 #include "server/ClientProxyUnknown.h"
 #include "server/PrimaryClient.h"
 
+#ifdef _WIN32
+#include <array>
+#endif
 #include <climits>
 #include <cmath>
 #include <cstdlib>
@@ -71,67 +74,55 @@ Server::Server(
   }
 
   // install event handlers
-  m_events->adoptHandler(EventTypes::Timer, this, new TMethodEventJob<Server>(this, &Server::handleSwitchWaitTimeout));
-  m_events->adoptHandler(
-      EventTypes::KeyStateKeyDown, m_inputFilter, new TMethodEventJob<Server>(this, &Server::handleKeyDownEvent)
-  );
-  m_events->adoptHandler(
-      EventTypes::KeyStateKeyUp, m_inputFilter, new TMethodEventJob<Server>(this, &Server::handleKeyUpEvent)
-  );
-  m_events->adoptHandler(
-      EventTypes::KeyStateKeyRepeat, m_inputFilter, new TMethodEventJob<Server>(this, &Server::handleKeyRepeatEvent)
-  );
-  m_events->adoptHandler(
-      EventTypes::PrimaryScreenButtonDown, m_inputFilter,
-      new TMethodEventJob<Server>(this, &Server::handleButtonDownEvent)
-  );
-  m_events->adoptHandler(
-      EventTypes::PrimaryScreenButtonUp, m_inputFilter, new TMethodEventJob<Server>(this, &Server::handleButtonUpEvent)
-  );
-  m_events->adoptHandler(
+  m_events->addHandler(EventTypes::Timer, this, [this](const auto &) { handleSwitchWaitTimeout(); });
+  m_events->addHandler(EventTypes::KeyStateKeyDown, m_inputFilter, [this](const auto &e) { handleKeyDownEvent(e); });
+  m_events->addHandler(EventTypes::KeyStateKeyUp, m_inputFilter, [this](const auto &e) { handleKeyUpEvent(e); });
+  m_events->addHandler(EventTypes::KeyStateKeyRepeat, m_inputFilter, [this](const auto &e) {
+    handleKeyRepeatEvent(e);
+  });
+  m_events->addHandler(EventTypes::PrimaryScreenButtonDown, m_inputFilter, [this](const auto &e) {
+    handleButtonDownEvent(e);
+  });
+  m_events->addHandler(EventTypes::PrimaryScreenButtonUp, m_inputFilter, [this](const auto &e) {
+    handleButtonUpEvent(e);
+  });
+  m_events->addHandler(
       EventTypes::PrimaryScreenMotionOnPrimary, m_primaryClient->getEventTarget(),
-      new TMethodEventJob<Server>(this, &Server::handleMotionPrimaryEvent)
+      [this](const auto &e) { handleMotionPrimaryEvent(e); }
   );
-  m_events->adoptHandler(
+  m_events->addHandler(
       EventTypes::PrimaryScreenMotionOnSecondary, m_primaryClient->getEventTarget(),
-      new TMethodEventJob<Server>(this, &Server::handleMotionSecondaryEvent)
+      [this](const auto &e) { handleMotionSecondaryEvent(e); }
   );
-  m_events->adoptHandler(
-      EventTypes::PrimaryScreenWheel, m_primaryClient->getEventTarget(),
-      new TMethodEventJob<Server>(this, &Server::handleWheelEvent)
-  );
-  m_events->adoptHandler(
+  m_events->addHandler(EventTypes::PrimaryScreenWheel, m_primaryClient->getEventTarget(), [this](const auto &e) {
+    handleWheelEvent(e);
+  });
+  m_events->addHandler(
       EventTypes::PrimaryScreenSaverActivated, m_primaryClient->getEventTarget(),
-      new TMethodEventJob<Server>(this, &Server::handleScreensaverActivatedEvent)
+      [this](const auto &) { onScreensaver(true); }
   );
-  m_events->adoptHandler(
+  m_events->addHandler(
       EventTypes::PrimaryScreenSaverDeactivated, m_primaryClient->getEventTarget(),
-      new TMethodEventJob<Server>(this, &Server::handleScreensaverDeactivatedEvent)
+      [this](const auto &) { onScreensaver(false); }
   );
-  m_events->adoptHandler(
-      EventTypes::ServerSwitchToScreen, m_inputFilter,
-      new TMethodEventJob<Server>(this, &Server::handleSwitchToScreenEvent)
-  );
-  m_events->adoptHandler(
-      EventTypes::ServerSwitchInDirection, m_inputFilter,
-      new TMethodEventJob<Server>(this, &Server::handleSwitchInDirectionEvent)
-  );
-  m_events->adoptHandler(
-      EventTypes::ServerKeyboardBroadcast, m_inputFilter,
-      new TMethodEventJob<Server>(this, &Server::handleKeyboardBroadcastEvent)
-  );
-  m_events->adoptHandler(
-      EventTypes::ServerLockCursorToScreen, m_inputFilter,
-      new TMethodEventJob<Server>(this, &Server::handleLockCursorToScreenEvent)
-  );
-  m_events->adoptHandler(
-      EventTypes::PrimaryScreenFakeInputBegin, m_inputFilter,
-      new TMethodEventJob<Server>(this, &Server::handleFakeInputBeginEvent)
-  );
-  m_events->adoptHandler(
-      EventTypes::PrimaryScreenFakeInputEnd, m_inputFilter,
-      new TMethodEventJob<Server>(this, &Server::handleFakeInputEndEvent)
-  );
+  m_events->addHandler(EventTypes::ServerSwitchToScreen, m_inputFilter, [this](const auto &e) {
+    handleSwitchToScreenEvent(e);
+  });
+  m_events->addHandler(EventTypes::ServerSwitchInDirection, m_inputFilter, [this](const auto &e) {
+    handleSwitchInDirectionEvent(e);
+  });
+  m_events->addHandler(EventTypes::ServerKeyboardBroadcast, m_inputFilter, [this](const auto &e) {
+    handleKeyboardBroadcastEvent(e);
+  });
+  m_events->addHandler(EventTypes::ServerLockCursorToScreen, m_inputFilter, [this](const auto &e) {
+    handleLockCursorToScreenEvent(e);
+  });
+  m_events->addHandler(EventTypes::PrimaryScreenFakeInputBegin, m_inputFilter, [this](const auto &) {
+    m_primaryClient->fakeInputBegin();
+  });
+  m_events->addHandler(EventTypes::PrimaryScreenFakeInputEnd, m_inputFilter, [this](const auto &) {
+    m_primaryClient->fakeInputEnd();
+  });
 
   // add connection
   addClient(m_primaryClient);
@@ -154,19 +145,20 @@ Server::Server(
 Server::~Server()
 {
   // remove event handlers and timers
-  m_events->removeHandler(EventTypes::KeyStateKeyDown, m_inputFilter);
-  m_events->removeHandler(EventTypes::KeyStateKeyUp, m_inputFilter);
-  m_events->removeHandler(EventTypes::KeyStateKeyRepeat, m_inputFilter);
-  m_events->removeHandler(EventTypes::PrimaryScreenButtonDown, m_inputFilter);
-  m_events->removeHandler(EventTypes::PrimaryScreenButtonUp, m_inputFilter);
-  m_events->removeHandler(EventTypes::PrimaryScreenMotionOnPrimary, m_primaryClient->getEventTarget());
-  m_events->removeHandler(EventTypes::PrimaryScreenMotionOnSecondary, m_primaryClient->getEventTarget());
-  m_events->removeHandler(EventTypes::PrimaryScreenWheel, m_primaryClient->getEventTarget());
-  m_events->removeHandler(EventTypes::PrimaryScreenSaverActivated, m_primaryClient->getEventTarget());
-  m_events->removeHandler(EventTypes::PrimaryScreenSaverDeactivated, m_primaryClient->getEventTarget());
-  m_events->removeHandler(EventTypes::PrimaryScreenFakeInputBegin, m_inputFilter);
-  m_events->removeHandler(EventTypes::PrimaryScreenFakeInputEnd, m_inputFilter);
-  m_events->removeHandler(EventTypes::Timer, this);
+  using enum EventTypes;
+  m_events->removeHandler(KeyStateKeyDown, m_inputFilter);
+  m_events->removeHandler(KeyStateKeyUp, m_inputFilter);
+  m_events->removeHandler(KeyStateKeyRepeat, m_inputFilter);
+  m_events->removeHandler(PrimaryScreenButtonDown, m_inputFilter);
+  m_events->removeHandler(PrimaryScreenButtonUp, m_inputFilter);
+  m_events->removeHandler(PrimaryScreenMotionOnPrimary, m_primaryClient->getEventTarget());
+  m_events->removeHandler(PrimaryScreenMotionOnSecondary, m_primaryClient->getEventTarget());
+  m_events->removeHandler(PrimaryScreenWheel, m_primaryClient->getEventTarget());
+  m_events->removeHandler(PrimaryScreenSaverActivated, m_primaryClient->getEventTarget());
+  m_events->removeHandler(PrimaryScreenSaverDeactivated, m_primaryClient->getEventTarget());
+  m_events->removeHandler(PrimaryScreenFakeInputBegin, m_inputFilter);
+  m_events->removeHandler(PrimaryScreenFakeInputEnd, m_inputFilter);
+  m_events->removeHandler(Timer, this);
   stopSwitch();
 
   try {
@@ -179,8 +171,8 @@ Server::~Server()
   for (auto index = m_oldClients.begin(); index != m_oldClients.end(); ++index) {
     BaseClientProxy *client = index->first;
     m_events->deleteTimer(index->second);
-    m_events->removeHandler(EventTypes::Timer, client);
-    m_events->removeHandler(EventTypes::ClientProxyDisconnected, client);
+    m_events->removeHandler(Timer, client);
+    m_events->removeHandler(ClientProxyDisconnected, client);
     delete client;
   }
 
@@ -237,10 +229,9 @@ void Server::adoptClient(BaseClientProxy *client)
   assert(client != nullptr);
 
   // watch for client disconnection
-  m_events->adoptHandler(
-      EventTypes::ClientProxyDisconnected, client,
-      new TMethodEventJob<Server>(this, &Server::handleClientDisconnected, client)
-  );
+  m_events->addHandler(EventTypes::ClientProxyDisconnected, client, [this, client](const auto &) {
+    handleClientDisconnected(client);
+  });
 
   // name must be in our configuration
   if (!m_config->isScreen(client->getName())) {
@@ -317,19 +308,21 @@ std::string Server::getName(const BaseClientProxy *client) const
 
 uint32_t Server::getActivePrimarySides() const
 {
+  using enum DirectionMask;
+  using enum Direction;
   uint32_t sides = 0;
   if (!isLockedToScreenServer()) {
-    if (hasAnyNeighbor(m_primaryClient, kLeft)) {
-      sides |= kLeftMask;
+    if (hasAnyNeighbor(m_primaryClient, Left)) {
+      sides |= static_cast<int>(LeftMask);
     }
-    if (hasAnyNeighbor(m_primaryClient, kRight)) {
-      sides |= kRightMask;
+    if (hasAnyNeighbor(m_primaryClient, Right)) {
+      sides |= static_cast<int>(RightMask);
     }
-    if (hasAnyNeighbor(m_primaryClient, kTop)) {
-      sides |= kTopMask;
+    if (hasAnyNeighbor(m_primaryClient, Top)) {
+      sides |= static_cast<int>(TopMask);
     }
-    if (hasAnyNeighbor(m_primaryClient, kBottom)) {
-      sides |= kBottomMask;
+    if (hasAnyNeighbor(m_primaryClient, Bottom)) {
+      sides |= static_cast<int>(BottomMask);
     }
   }
   return sides;
@@ -501,7 +494,7 @@ void Server::jumpToScreen(BaseClientProxy *newScreen)
   switchScreen(newScreen, x, y, false);
 }
 
-float Server::mapToFraction(const BaseClientProxy *client, EDirection dir, int32_t x, int32_t y) const
+float Server::mapToFraction(const BaseClientProxy *client, Direction dir, int32_t x, int32_t y) const
 {
   int32_t sx;
   int32_t sy;
@@ -509,22 +502,23 @@ float Server::mapToFraction(const BaseClientProxy *client, EDirection dir, int32
   int32_t sh;
   client->getShape(sx, sy, sw, sh);
   switch (dir) {
-  case kLeft:
-  case kRight:
+    using enum Direction;
+  case Left:
+  case Right:
     return static_cast<float>(y - sy + 0.5f) / static_cast<float>(sh);
 
-  case kTop:
-  case kBottom:
+  case Top:
+  case Bottom:
     return static_cast<float>(x - sx + 0.5f) / static_cast<float>(sw);
 
-  case kNoDirection:
+  case NoDirection:
     assert(0 && "bad direction");
     break;
   }
   return 0.0f;
 }
 
-void Server::mapToPixel(const BaseClientProxy *client, EDirection dir, float f, int32_t &x, int32_t &y) const
+void Server::mapToPixel(const BaseClientProxy *client, Direction dir, float f, int32_t &x, int32_t &y) const
 {
   int32_t sx;
   int32_t sy;
@@ -532,30 +526,31 @@ void Server::mapToPixel(const BaseClientProxy *client, EDirection dir, float f, 
   int32_t sh;
   client->getShape(sx, sy, sw, sh);
   switch (dir) {
-  case kLeft:
-  case kRight:
+    using enum Direction;
+  case Left:
+  case Right:
     y = static_cast<int32_t>(f * sh) + sy;
     break;
 
-  case kTop:
-  case kBottom:
+  case Top:
+  case Bottom:
     x = static_cast<int32_t>(f * sw) + sx;
     break;
 
-  case kNoDirection:
+  case NoDirection:
     assert(0 && "bad direction");
     break;
   }
 }
 
-bool Server::hasAnyNeighbor(const BaseClientProxy *client, EDirection dir) const
+bool Server::hasAnyNeighbor(const BaseClientProxy *client, Direction dir) const
 {
   assert(client != nullptr);
 
   return m_config->hasNeighbor(getName(client), dir);
 }
 
-BaseClientProxy *Server::getNeighbor(const BaseClientProxy *src, EDirection dir, int32_t &x, int32_t &y) const
+BaseClientProxy *Server::getNeighbor(const BaseClientProxy *src, Direction dir, int32_t &x, int32_t &y) const
 {
   // note -- must be locked on entry
 
@@ -600,7 +595,7 @@ BaseClientProxy *Server::getNeighbor(const BaseClientProxy *src, EDirection dir,
   }
 }
 
-BaseClientProxy *Server::mapToNeighbor(BaseClientProxy *src, EDirection srcSide, int32_t &x, int32_t &y) const
+BaseClientProxy *Server::mapToNeighbor(BaseClientProxy *src, Direction srcSide, int32_t &x, int32_t &y) const
 {
   // note -- must be locked on entry
 
@@ -626,7 +621,8 @@ BaseClientProxy *Server::mapToNeighbor(BaseClientProxy *src, EDirection srcSide,
   // actual to canonical position on entry to and from canonical to
   // actual on exit from the search.
   switch (srcSide) {
-  case kLeft:
+    using enum Direction;
+  case Left:
     x -= dx;
     while (dst != nullptr) {
       lastGoodScreen = dst;
@@ -642,7 +638,7 @@ BaseClientProxy *Server::mapToNeighbor(BaseClientProxy *src, EDirection srcSide,
     x += dx;
     break;
 
-  case kRight:
+  case Right:
     x -= dx;
     while (dst != nullptr) {
       x -= dw;
@@ -658,7 +654,7 @@ BaseClientProxy *Server::mapToNeighbor(BaseClientProxy *src, EDirection srcSide,
     x += dx;
     break;
 
-  case kTop:
+  case Top:
     y -= dy;
     while (dst != nullptr) {
       lastGoodScreen = dst;
@@ -674,7 +670,7 @@ BaseClientProxy *Server::mapToNeighbor(BaseClientProxy *src, EDirection srcSide,
     y += dy;
     break;
 
-  case kBottom:
+  case Bottom:
     y -= dy;
     while (dst != nullptr) {
       y -= dh;
@@ -690,7 +686,7 @@ BaseClientProxy *Server::mapToNeighbor(BaseClientProxy *src, EDirection srcSide,
     y += dy;
     break;
 
-  case kNoDirection:
+  case NoDirection:
     assert(0 && "bad direction");
     return nullptr;
   }
@@ -708,7 +704,7 @@ BaseClientProxy *Server::mapToNeighbor(BaseClientProxy *src, EDirection srcSide,
   return dst;
 }
 
-void Server::avoidJumpZone(const BaseClientProxy *dst, EDirection dir, int32_t &x, int32_t &y) const
+void Server::avoidJumpZone(const BaseClientProxy *dst, Direction dir, int32_t &x, int32_t &y) const
 {
   // we only need to avoid jump zones on the primary screen
   if (dst != m_primaryClient) {
@@ -728,33 +724,34 @@ void Server::avoidJumpZone(const BaseClientProxy *dst, EDirection dir, int32_t &
   // that doesn't have a neighbor (i.e. an asymmetrical side) then we
   // don't need to move inwards because that side can't provoke a jump.
   switch (dir) {
-  case kLeft:
-    if (!m_config->getNeighbor(dstName, kRight, t, nullptr).empty() && x > dx + dw - 1 - z)
+    using enum Direction;
+  case Left:
+    if (!m_config->getNeighbor(dstName, Right, t, nullptr).empty() && x > dx + dw - 1 - z)
       x = dx + dw - 1 - z;
     break;
 
-  case kRight:
-    if (!m_config->getNeighbor(dstName, kLeft, t, nullptr).empty() && x < dx + z)
+  case Right:
+    if (!m_config->getNeighbor(dstName, Left, t, nullptr).empty() && x < dx + z)
       x = dx + z;
     break;
 
-  case kTop:
-    if (!m_config->getNeighbor(dstName, kBottom, t, nullptr).empty() && y > dy + dh - 1 - z)
+  case Top:
+    if (!m_config->getNeighbor(dstName, Bottom, t, nullptr).empty() && y > dy + dh - 1 - z)
       y = dy + dh - 1 - z;
     break;
 
-  case kBottom:
-    if (!m_config->getNeighbor(dstName, kTop, t, nullptr).empty() && y < dy + z)
+  case Bottom:
+    if (!m_config->getNeighbor(dstName, Top, t, nullptr).empty() && y < dy + z)
       y = dy + z;
     break;
 
-  case kNoDirection:
+  case NoDirection:
     assert(0 && "bad direction");
   }
 }
 
 bool Server::isSwitchOkay(
-    BaseClientProxy *newScreen, EDirection dir, int32_t x, int32_t y, int32_t xActive, int32_t yActive
+    BaseClientProxy *newScreen, Direction dir, int32_t x, int32_t y, int32_t xActive, int32_t yActive
 )
 {
   LOG((CLOG_DEBUG1 "try to leave \"%s\" on %s", getName(m_active).c_str(), Config::dirName(dir)));
@@ -856,7 +853,7 @@ void Server::stopSwitch()
 {
   if (m_switchScreen != nullptr) {
     m_switchScreen = nullptr;
-    m_switchDir = kNoDirection;
+    m_switchDir = Direction::NoDirection;
     stopSwitchTwoTap();
     stopSwitchWait();
   }
@@ -893,19 +890,20 @@ void Server::armSwitchTwoTap(int32_t x, int32_t y)
         // move in the opposite direction that the mouse actually
         // moved.  try to ignore that crap here.
         switch (m_switchDir) {
-        case kLeft:
+          using enum Direction;
+        case Left:
           m_switchTwoTapArmed = (m_xDelta > 0 && m_xDelta2 > 0);
           break;
 
-        case kRight:
+        case Right:
           m_switchTwoTapArmed = (m_xDelta < 0 && m_xDelta2 < 0);
           break;
 
-        case kTop:
+        case Top:
           m_switchTwoTapArmed = (m_yDelta > 0 && m_yDelta2 > 0);
           break;
 
-        case kBottom:
+        case Bottom:
           m_switchTwoTapArmed = (m_yDelta < 0 && m_yDelta2 < 0);
           break;
 
@@ -1128,10 +1126,8 @@ void Server::processOptions()
   m_relativeMoves = newRelativeMoves;
 }
 
-void Server::handleShapeChanged(const Event &, void *vclient)
+void Server::handleShapeChanged(BaseClientProxy *client)
 {
-  // ignore events from unknown clients
-  auto *client = static_cast<BaseClientProxy *>(vclient);
   if (m_clientSet.count(client) == 0) {
     return;
   }
@@ -1160,14 +1156,13 @@ void Server::handleShapeChanged(const Event &, void *vclient)
   }
 }
 
-void Server::handleClipboardGrabbed(const Event &event, void *vclient)
+void Server::handleClipboardGrabbed(const Event &event, BaseClientProxy *grabber)
 {
   if (!m_enableClipboard || (m_maximumClipboardSize == 0)) {
     return;
   }
 
   // ignore events from unknown clients
-  auto *grabber = static_cast<BaseClientProxy *>(vclient);
   if (m_clientSet.count(grabber) == 0) {
     return;
   }
@@ -1216,78 +1211,67 @@ void Server::handleClipboardGrabbed(const Event &event, void *vclient)
   }
 }
 
-void Server::handleClipboardChanged(const Event &event, void *vclient)
+void Server::handleClipboardChanged(const Event &event, BaseClientProxy *client)
 {
   // ignore events from unknown clients
-  auto *sender = static_cast<BaseClientProxy *>(vclient);
-  if (m_clientSet.count(sender) == 0) {
+  if (!m_clientSet.contains(client)) {
     return;
   }
   const auto *info = static_cast<const IScreen::ClipboardInfo *>(event.getData());
-  onClipboardChanged(sender, info->m_id, info->m_sequenceNumber);
+  onClipboardChanged(client, info->m_id, info->m_sequenceNumber);
 }
 
-void Server::handleKeyDownEvent(const Event &event, void *)
+void Server::handleKeyDownEvent(const Event &event)
 {
   const auto *info = static_cast<IPlatformScreen::KeyInfo *>(event.getData());
   auto lang = AppUtil::instance().getCurrentLanguageCode();
   onKeyDown(info->m_key, info->m_mask, info->m_button, lang, info->m_screens);
 }
 
-void Server::handleKeyUpEvent(const Event &event, void *)
+void Server::handleKeyUpEvent(const Event &event)
 {
   auto *info = static_cast<IPlatformScreen::KeyInfo *>(event.getData());
   onKeyUp(info->m_key, info->m_mask, info->m_button, info->m_screens);
 }
 
-void Server::handleKeyRepeatEvent(const Event &event, void *)
+void Server::handleKeyRepeatEvent(const Event &event)
 {
   const auto *info = static_cast<IPlatformScreen::KeyInfo *>(event.getData());
   auto lang = AppUtil::instance().getCurrentLanguageCode();
   onKeyRepeat(info->m_key, info->m_mask, info->m_count, info->m_button, lang);
 }
 
-void Server::handleButtonDownEvent(const Event &event, void *)
+void Server::handleButtonDownEvent(const Event &event)
 {
   const auto *info = static_cast<IPlatformScreen::ButtonInfo *>(event.getData());
   onMouseDown(info->m_button);
 }
 
-void Server::handleButtonUpEvent(const Event &event, void *)
+void Server::handleButtonUpEvent(const Event &event)
 {
   const auto *info = static_cast<IPlatformScreen::ButtonInfo *>(event.getData());
   onMouseUp(info->m_button);
 }
 
-void Server::handleMotionPrimaryEvent(const Event &event, void *)
+void Server::handleMotionPrimaryEvent(const Event &event)
 {
   const auto *info = static_cast<IPlatformScreen::MotionInfo *>(event.getData());
   onMouseMovePrimary(info->m_x, info->m_y);
 }
 
-void Server::handleMotionSecondaryEvent(const Event &event, void *)
+void Server::handleMotionSecondaryEvent(const Event &event)
 {
   const auto *info = static_cast<IPlatformScreen::MotionInfo *>(event.getData());
   onMouseMoveSecondary(info->m_x, info->m_y);
 }
 
-void Server::handleWheelEvent(const Event &event, void *)
+void Server::handleWheelEvent(const Event &event)
 {
   const auto *info = static_cast<IPlatformScreen::WheelInfo *>(event.getData());
   onMouseWheel(info->m_xDelta, info->m_yDelta);
 }
 
-void Server::handleScreensaverActivatedEvent(const Event &, void *)
-{
-  onScreensaver(true);
-}
-
-void Server::handleScreensaverDeactivatedEvent(const Event &, void *)
-{
-  onScreensaver(false);
-}
-
-void Server::handleSwitchWaitTimeout(const Event &, void *)
+void Server::handleSwitchWaitTimeout()
 {
   // ignore if mouse is locked to screen
   if (isLockedToScreen()) {
@@ -1300,28 +1284,26 @@ void Server::handleSwitchWaitTimeout(const Event &, void *)
   switchScreen(m_switchScreen, m_switchWaitX, m_switchWaitY, false);
 }
 
-void Server::handleClientDisconnected(const Event &, void *vclient)
+void Server::handleClientDisconnected(BaseClientProxy *client)
 {
   // client has disconnected.  it might be an old client or an
   // active client.  we don't care so just handle it both ways.
-  auto *client = static_cast<BaseClientProxy *>(vclient);
   removeActiveClient(client);
   removeOldClient(client);
 
   delete client;
 }
 
-void Server::handleClientCloseTimeout(const Event &, void *vclient)
+void Server::handleClientCloseTimeout(BaseClientProxy *client)
 {
   // client took too long to disconnect.  just dump it.
-  auto *client = static_cast<BaseClientProxy *>(vclient);
   LOG((CLOG_NOTE "forced disconnection of client \"%s\"", getName(client).c_str()));
   removeOldClient(client);
 
   delete client;
 }
 
-void Server::handleSwitchToScreenEvent(const Event &event, void *)
+void Server::handleSwitchToScreenEvent(const Event &event)
 {
   auto *info = static_cast<SwitchToScreenInfo *>(event.getData());
 
@@ -1333,7 +1315,7 @@ void Server::handleSwitchToScreenEvent(const Event &event, void *)
   }
 }
 
-void Server::handleSwitchInDirectionEvent(const Event &event, void *)
+void Server::handleSwitchInDirectionEvent(const Event &event)
 {
   const auto *info = static_cast<SwitchInDirectionInfo *>(event.getData());
 
@@ -1348,7 +1330,7 @@ void Server::handleSwitchInDirectionEvent(const Event &event, void *)
   }
 }
 
-void Server::handleKeyboardBroadcastEvent(const Event &event, void *)
+void Server::handleKeyboardBroadcastEvent(const Event &event)
 {
   const auto *info = (KeyboardBroadcastInfo *)event.getData();
 
@@ -1380,7 +1362,7 @@ void Server::handleKeyboardBroadcastEvent(const Event &event, void *)
   }
 }
 
-void Server::handleLockCursorToScreenEvent(const Event &event, void *)
+void Server::handleLockCursorToScreenEvent(const Event &event)
 {
   const auto *info = (LockCursorToScreenInfo *)event.getData();
 
@@ -1411,16 +1393,6 @@ void Server::handleLockCursorToScreenEvent(const Event &event, void *)
       stopRelativeMoves();
     }
   }
-}
-
-void Server::handleFakeInputBeginEvent(const Event &, void *)
-{
-  m_primaryClient->fakeInputBegin();
-}
-
-void Server::handleFakeInputEndEvent(const Event &, void *)
-{
-  m_primaryClient->fakeInputEnd();
 }
 
 void Server::onClipboardChanged(const BaseClientProxy *sender, ClipboardID id, uint32_t seqNum)
@@ -1646,40 +1618,42 @@ bool Server::onMouseMovePrimary(int32_t x, int32_t y)
   // see if we should change screens
   // when the cursor is in a corner, there may be a screen either
   // horizontally or vertically.  check both directions.
-  EDirection dirh = kNoDirection, dirv = kNoDirection;
+  using enum Direction;
+  auto dirh = NoDirection;
+  auto dirv = NoDirection;
   int32_t xh = x;
   int32_t yv = y;
   if (x < ax + zoneSize) {
     xh -= zoneSize;
-    dirh = kLeft;
+    dirh = Left;
   } else if (x >= ax + aw - zoneSize) {
     xh += zoneSize;
-    dirh = kRight;
+    dirh = Right;
   }
   if (y < ay + zoneSize) {
     yv -= zoneSize;
-    dirv = kTop;
+    dirv = Top;
   } else if (y >= ay + ah - zoneSize) {
     yv += zoneSize;
-    dirv = kBottom;
+    dirv = Bottom;
   }
-  if (dirh == kNoDirection && dirv == kNoDirection) {
+  if (dirh == NoDirection && dirv == NoDirection) {
     // still on local screen
     noSwitch(x, y);
     return false;
   }
 
   // check both horizontally and vertically
-  EDirection dirs[] = {dirh, dirv};
-  int32_t xs[] = {xh, x};
-  int32_t ys[] = {y, yv};
+  std::array<Direction, 2> dirs = {dirh, dirv};
+  std::array<int32_t, 2> xs = {xh, x};
+  std::array<int32_t, 2> ys = {y, yv};
   for (int i = 0; i < 2; ++i) {
-    EDirection dir = dirs[i];
-    if (dir == kNoDirection) {
+    Direction dir = dirs.at(i);
+    if (dir == NoDirection) {
       continue;
     }
-    x = xs[i], y = ys[i];
-
+    x = xs.at(i);
+    y = ys.at(i);
     // get jump destination
     BaseClientProxy *newScreen = mapToNeighbor(m_active, dir, x, y);
 
@@ -1773,15 +1747,16 @@ void Server::onMouseMoveSecondary(int32_t dx, int32_t dy)
       yc = ay + ah - 1;
     }
 
-    EDirection dir;
+    Direction dir;
+    using enum Direction;
     if (m_x < ax) {
-      dir = kLeft;
+      dir = Left;
     } else if (m_x > ax + aw - 1) {
-      dir = kRight;
+      dir = Right;
     } else if (m_y < ay) {
-      dir = kTop;
+      dir = Top;
     } else if (m_y > ay + ah - 1) {
-      dir = kBottom;
+      dir = Bottom;
     } else {
       // we haven't left the screen
       newScreen = m_active;
@@ -1794,19 +1769,19 @@ void Server::onMouseMoveSecondary(int32_t dx, int32_t dy)
         bool clearWait;
         int32_t zoneSize = m_primaryClient->getJumpZoneSize();
         switch (m_switchDir) {
-        case kLeft:
+        case Left:
           clearWait = (m_x >= ax + zoneSize);
           break;
 
-        case kRight:
+        case Right:
           clearWait = (m_x <= ax + aw - 1 - zoneSize);
           break;
 
-        case kTop:
+        case Top:
           clearWait = (m_y >= ay + zoneSize);
           break;
 
-        case kBottom:
+        case Bottom:
           clearWait = (m_y <= ay + ah - 1 + zoneSize);
           break;
 
@@ -1884,18 +1859,15 @@ bool Server::addClient(BaseClientProxy *client)
   }
 
   // add event handlers
-  m_events->adoptHandler(
-      EventTypes::ScreenShapeChanged, client->getEventTarget(),
-      new TMethodEventJob<Server>(this, &Server::handleShapeChanged, client)
-  );
-  m_events->adoptHandler(
-      EventTypes::ClipboardGrabbed, client->getEventTarget(),
-      new TMethodEventJob<Server>(this, &Server::handleClipboardGrabbed, client)
-  );
-  m_events->adoptHandler(
-      EventTypes::ClipboardChanged, client->getEventTarget(),
-      new TMethodEventJob<Server>(this, &Server::handleClipboardChanged, client)
-  );
+  m_events->addHandler(EventTypes::ScreenShapeChanged, client->getEventTarget(), [this, client](const auto &) {
+    handleShapeChanged(client);
+  });
+  m_events->addHandler(EventTypes::ClipboardGrabbed, client->getEventTarget(), [this, client](const auto &e) {
+    handleClipboardGrabbed(e, client);
+  });
+  m_events->addHandler(EventTypes::ClipboardChanged, client->getEventTarget(), [this, client](const auto &e) {
+    handleClipboardChanged(e, client);
+  });
 
   // add to list
   m_clientSet.insert(client);
@@ -1915,6 +1887,7 @@ bool Server::addClient(BaseClientProxy *client)
 
 bool Server::removeClient(BaseClientProxy *client)
 {
+  using enum EventTypes;
   // return false if not in list
   ClientSet::iterator i = m_clientSet.find(client);
   if (i == m_clientSet.end()) {
@@ -1922,9 +1895,9 @@ bool Server::removeClient(BaseClientProxy *client)
   }
 
   // remove event handlers
-  m_events->removeHandler(EventTypes::ScreenShapeChanged, client->getEventTarget());
-  m_events->removeHandler(EventTypes::ClipboardGrabbed, client->getEventTarget());
-  m_events->removeHandler(EventTypes::ClipboardChanged, client->getEventTarget());
+  m_events->removeHandler(ScreenShapeChanged, client->getEventTarget());
+  m_events->removeHandler(ClipboardGrabbed, client->getEventTarget());
+  m_events->removeHandler(ClipboardChanged, client->getEventTarget());
 
   // remove from list
   m_clients.erase(getName(client));
@@ -1950,14 +1923,13 @@ void Server::closeClient(BaseClientProxy *client, const char *msg)
 
   // send message
   // FIXME -- avoid type cast (kinda hard, though)
-  ((ClientProxy *)client)->close(msg);
+  auto clientProxy = static_cast<ClientProxy *>(client);
+  clientProxy->close(msg);
 
   // install timer.  wait timeout seconds for client to close.
   double timeout = 5.0;
   EventQueueTimer *timer = m_events->newOneShotTimer(timeout, nullptr);
-  m_events->adoptHandler(
-      EventTypes::Timer, timer, new TMethodEventJob<Server>(this, &Server::handleClientCloseTimeout, client)
-  );
+  m_events->addHandler(EventTypes::Timer, timer, [this, client](const auto &) { handleClientCloseTimeout(client); });
 
   // move client to closing list
   removeClient(client);
@@ -2004,14 +1976,15 @@ void Server::removeActiveClient(BaseClientProxy *client)
 
 void Server::removeOldClient(BaseClientProxy *client)
 {
+  using enum EventTypes;
   OldClients::iterator i = m_oldClients.find(client);
   if (i != m_oldClients.end()) {
-    m_events->removeHandler(EventTypes::ClientProxyDisconnected, client);
-    m_events->removeHandler(EventTypes::Timer, i->second);
+    m_events->removeHandler(ClientProxyDisconnected, client);
+    m_events->removeHandler(Timer, i->second);
     m_events->deleteTimer(i->second);
     m_oldClients.erase(i);
     if (m_clients.size() == 1 && m_oldClients.empty()) {
-      m_events->addEvent(Event(EventTypes::ServerDisconnected, this));
+      m_events->addEvent(Event(ServerDisconnected, this));
     }
   }
 }
@@ -2081,7 +2054,7 @@ Server::SwitchToScreenInfo *Server::SwitchToScreenInfo::alloc(const std::string 
 // Server::SwitchInDirectionInfo
 //
 
-Server::SwitchInDirectionInfo *Server::SwitchInDirectionInfo::alloc(EDirection direction)
+Server::SwitchInDirectionInfo *Server::SwitchInDirectionInfo::alloc(Direction direction)
 {
   auto *info = (SwitchInDirectionInfo *)malloc(sizeof(SwitchInDirectionInfo));
   info->m_direction = direction;

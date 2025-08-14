@@ -1,5 +1,6 @@
 /*
  * Deskflow -- mouse and keyboard sharing utility
+ * SPDX-FileCopyrightText: (C) 2025 Deskflow Developers
  * SPDX-FileCopyrightText: (C) 2012 - 2016 Symless Ltd.
  * SPDX-FileCopyrightText: (C) 2004 Chris Schoeneman
  * SPDX-License-Identifier: GPL-2.0-only WITH LicenseRef-OpenSSL-Exception
@@ -9,7 +10,6 @@
 
 #include "base/IEventQueue.h"
 #include "base/Log.h"
-#include "base/TMethodEventJob.h"
 #include "deskflow/AppUtil.h"
 #include "deskflow/ProtocolTypes.h"
 #include "deskflow/ProtocolUtil.h"
@@ -41,10 +41,7 @@ ClientProxyUnknown::ClientProxyUnknown(deskflow::IStream *stream, double timeout
 {
   assert(m_server != nullptr);
 
-  m_events->adoptHandler(
-      EventTypes::Timer, this,
-      new TMethodEventJob<ClientProxyUnknown>(this, &ClientProxyUnknown::handleTimeout, nullptr)
-  );
+  m_events->addHandler(EventTypes::Timer, this, [this](const auto &) { handleTimeout(); });
   m_timer = m_events->newOneShotTimer(timeout, this);
   addStreamHandlers();
 
@@ -95,54 +92,44 @@ void ClientProxyUnknown::sendFailure()
 void ClientProxyUnknown::addStreamHandlers()
 {
   assert(m_stream != nullptr);
-  m_events->adoptHandler(
-      EventTypes::StreamInputReady, m_stream->getEventTarget(),
-      new TMethodEventJob<ClientProxyUnknown>(this, &ClientProxyUnknown::handleData)
-  );
-  m_events->adoptHandler(
-      EventTypes::StreamOutputError, m_stream->getEventTarget(),
-      new TMethodEventJob<ClientProxyUnknown>(this, &ClientProxyUnknown::handleWriteError)
-  );
-  m_events->adoptHandler(
-      EventTypes::StreamInputShutdown, m_stream->getEventTarget(),
-      new TMethodEventJob<ClientProxyUnknown>(this, &ClientProxyUnknown::handleDisconnect)
-  );
-  m_events->adoptHandler(
-      EventTypes::StreamInputFormatError, m_stream->getEventTarget(),
-      new TMethodEventJob<ClientProxyUnknown>(this, &ClientProxyUnknown::handleDisconnect)
-  );
-  m_events->adoptHandler(
-      EventTypes::StreamOutputShutdown, m_stream->getEventTarget(),
-      new TMethodEventJob<ClientProxyUnknown>(this, &ClientProxyUnknown::handleWriteError)
-  );
+  m_events->addHandler(EventTypes::StreamInputReady, m_stream->getEventTarget(), [this](const auto &) {
+    handleData();
+  });
+  m_events->addHandler(EventTypes::StreamOutputError, m_stream->getEventTarget(), [this](const auto &) {
+    handleWriteError();
+  });
+  m_events->addHandler(EventTypes::StreamInputShutdown, m_stream->getEventTarget(), [this](const auto &) {
+    handleDisconnect();
+  });
+  m_events->addHandler(EventTypes::StreamInputFormatError, m_stream->getEventTarget(), [this](const auto &) {
+    handleDisconnect();
+  });
+  m_events->addHandler(EventTypes::StreamOutputShutdown, m_stream->getEventTarget(), [this](const auto &) {
+    handleWriteError();
+  });
 }
 
 void ClientProxyUnknown::addProxyHandlers()
 {
   assert(m_proxy != nullptr);
 
-  m_events->adoptHandler(
-      EventTypes::ClientProxyReady, m_proxy,
-      new TMethodEventJob<ClientProxyUnknown>(this, &ClientProxyUnknown::handleReady)
-  );
-  m_events->adoptHandler(
-      EventTypes::ClientProxyDisconnected, m_proxy,
-      new TMethodEventJob<ClientProxyUnknown>(this, &ClientProxyUnknown::handleDisconnect)
-  );
+  m_events->addHandler(EventTypes::ClientProxyReady, m_proxy, [this](const auto &) { sendSuccess(); });
+  m_events->addHandler(EventTypes::ClientProxyDisconnected, m_proxy, [this](const auto &) { handleDisconnect(); });
 }
 
 void ClientProxyUnknown::removeHandlers()
 {
+  using enum EventTypes;
   if (m_stream != nullptr) {
-    m_events->removeHandler(EventTypes::StreamInputReady, m_stream->getEventTarget());
-    m_events->removeHandler(EventTypes::StreamOutputError, m_stream->getEventTarget());
-    m_events->removeHandler(EventTypes::StreamInputShutdown, m_stream->getEventTarget());
-    m_events->removeHandler(EventTypes::StreamInputFormatError, m_stream->getEventTarget());
-    m_events->removeHandler(EventTypes::StreamOutputShutdown, m_stream->getEventTarget());
+    m_events->removeHandler(StreamInputReady, m_stream->getEventTarget());
+    m_events->removeHandler(StreamOutputError, m_stream->getEventTarget());
+    m_events->removeHandler(StreamInputShutdown, m_stream->getEventTarget());
+    m_events->removeHandler(StreamInputFormatError, m_stream->getEventTarget());
+    m_events->removeHandler(StreamOutputShutdown, m_stream->getEventTarget());
   }
   if (m_proxy != nullptr) {
-    m_events->removeHandler(EventTypes::ClientProxyReady, m_proxy);
-    m_events->removeHandler(EventTypes::ClientProxyDisconnected, m_proxy);
+    m_events->removeHandler(ClientProxyReady, m_proxy);
+    m_events->removeHandler(ClientProxyDisconnected, m_proxy);
   }
 }
 
@@ -194,6 +181,9 @@ void ClientProxyUnknown::initProxy(const std::string &name, int major, int minor
     case 8:
       m_proxy = new ClientProxy1_8(name, m_stream, m_server, m_events);
       break;
+
+    default:
+      break;
     }
   }
 
@@ -203,7 +193,7 @@ void ClientProxyUnknown::initProxy(const std::string &name, int major, int minor
   }
 }
 
-void ClientProxyUnknown::handleData(const Event &, void *)
+void ClientProxyUnknown::handleData()
 {
   LOG((CLOG_DEBUG1 "parsing hello reply"));
 
@@ -258,25 +248,20 @@ void ClientProxyUnknown::handleData(const Event &, void *)
   sendFailure();
 }
 
-void ClientProxyUnknown::handleWriteError(const Event &, void *)
+void ClientProxyUnknown::handleWriteError()
 {
   LOG((CLOG_NOTE "error communicating with new client"));
   sendFailure();
 }
 
-void ClientProxyUnknown::handleTimeout(const Event &, void *)
+void ClientProxyUnknown::handleTimeout()
 {
   LOG((CLOG_NOTE "new client is unresponsive"));
   sendFailure();
 }
 
-void ClientProxyUnknown::handleDisconnect(const Event &, void *)
+void ClientProxyUnknown::handleDisconnect()
 {
   LOG((CLOG_NOTE "new client disconnected"));
   sendFailure();
-}
-
-void ClientProxyUnknown::handleReady(const Event &, void *)
-{
-  sendSuccess();
 }

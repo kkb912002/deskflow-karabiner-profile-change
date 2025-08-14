@@ -21,6 +21,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
 #include <list>
+#include <mutex>
 
 #pragma comment(lib, "ws2_32.lib")
 
@@ -51,13 +52,13 @@ public:
 class ArchNetworkWinsock : public IArchNetwork
 {
 public:
-  ArchNetworkWinsock();
+  ArchNetworkWinsock() = default;
   ~ArchNetworkWinsock() override;
 
   void init() override;
 
   // IArchNetwork overrides
-  ArchSocket newSocket(EAddressFamily, ESocketType) override;
+  ArchSocket newSocket(AddressFamily, SocketType) override;
   ArchSocket copySocket(ArchSocket s) override;
   void closeSocket(ArchSocket s) override;
   void closeSocketForRead(ArchSocket s) override;
@@ -74,13 +75,13 @@ public:
   bool setNoDelayOnSocket(ArchSocket, bool noDelay) override;
   bool setReuseAddrOnSocket(ArchSocket, bool reuse) override;
   std::string getHostName() override;
-  ArchNetAddress newAnyAddr(EAddressFamily) override;
+  ArchNetAddress newAnyAddr(AddressFamily) override;
   ArchNetAddress copyAddr(ArchNetAddress) override;
   std::vector<ArchNetAddress> nameToAddr(const std::string &) override;
   void closeAddr(ArchNetAddress) override;
   std::string addrToName(ArchNetAddress) override;
   std::string addrToString(ArchNetAddress) override;
-  EAddressFamily getAddrFamily(ArchNetAddress) override;
+  AddressFamily getAddrFamily(ArchNetAddress) override;
   void setAddrPort(ArchNetAddress, int port) override;
   int getAddrPort(ArchNetAddress) override;
   bool isAnyAddr(ArchNetAddress) override;
@@ -91,12 +92,11 @@ private:
 
   void setBlockingOnSocket(SOCKET, bool blocking);
 
-  void throwError(int);
-  void throwNameError(int);
+  [[noreturn]] void throwError(int) const override;
+  [[noreturn]] void throwNameError(int) const override;
 
-private:
   using EventList = std::list<WSAEVENT>;
 
-  ArchMutex m_mutex;
+  std::mutex m_mutex;
   EventList m_unblockEvents;
 };

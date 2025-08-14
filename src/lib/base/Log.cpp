@@ -7,6 +7,7 @@
 
 #include "base/Log.h"
 #include "arch/Arch.h"
+#include "base/LogLevel.h"
 #include "base/LogOutputters.h"
 #include "common/Constants.h"
 
@@ -33,14 +34,14 @@ static const int g_numPriority = 11;
 // for visual studio, then NDEBUG will be set (even if your VS solution
 // config is Debug).
 #ifndef NDEBUG
-static const int g_defaultMaxPriority = kDEBUG;
+static const LogLevel g_defaultMaxPriority = LogLevel::Debug;
 #else
-static const int g_defaultMaxPriority = kINFO;
+static const LogLevel g_defaultMaxPriority = LogLevel::Info;
 #endif
 
 namespace {
 
-ELevel getPriority(const char *&fmt)
+LogLevel getPriority(const char *&fmt)
 {
   if (strnlen(fmt, SIZE_MAX) < kPriorityPrefixLength) {
     throw std::invalid_argument("invalid format string, too short");
@@ -50,7 +51,7 @@ ELevel getPriority(const char *&fmt)
     throw std::invalid_argument("invalid format string, missing priority");
   }
 
-  return static_cast<ELevel>(fmt[2] - '0');
+  return static_cast<LogLevel>(fmt[2] - '0');
 }
 
 void makeTimeString(std::vector<char> &buffer)
@@ -74,7 +75,7 @@ void makeTimeString(std::vector<char> &buffer)
   );
 }
 
-std::vector<char> makeMessage(const char *filename, int lineNumber, const char *message, ELevel priority)
+std::vector<char> makeMessage(const char *filename, int lineNumber, const char *message, LogLevel priority)
 {
 
   // base size includes null terminator, colon, space, etc.
@@ -82,12 +83,13 @@ std::vector<char> makeMessage(const char *filename, int lineNumber, const char *
 
   const int timeBufferSize = 50;
   const int priorityMaxSize = 10;
+  const auto currentPriority = static_cast<int>(priority);
 
   std::vector<char> timeBuffer(timeBufferSize);
   makeTimeString(timeBuffer);
 
   size_t timestampLength = strnlen(timeBuffer.data(), timeBufferSize);
-  size_t priorityLength = strnlen(g_priority[priority], priorityMaxSize);
+  size_t priorityLength = strnlen(g_priority[currentPriority], priorityMaxSize);
   size_t messageLength = strnlen(message, SIZE_MAX);
   size_t bufferSize = baseSize + timestampLength + priorityLength + messageLength;
 
@@ -99,13 +101,13 @@ std::vector<char> makeMessage(const char *filename, int lineNumber, const char *
 
     std::vector<char> buffer(bufferSize);
     snprintf(
-        buffer.data(), bufferSize, "[%s] %s: %s\n\t%s:%d", timeBuffer.data(), g_priority[priority], message, filename,
-        lineNumber
+        buffer.data(), bufferSize, "[%s] %s: %s\n\t%s:%d", timeBuffer.data(), g_priority[currentPriority], message,
+        filename, lineNumber
     );
     return buffer;
   } else {
     std::vector<char> buffer(bufferSize);
-    snprintf(buffer.data(), bufferSize, "[%s] %s: %s", timeBuffer.data(), g_priority[priority], message);
+    snprintf(buffer.data(), bufferSize, "[%s] %s: %s", timeBuffer.data(), g_priority[currentPriority], message);
     return buffer;
   }
 }
@@ -122,9 +124,6 @@ Log::Log(bool singleton)
   if (singleton) {
     assert(s_log == nullptr);
   }
-
-  // create mutex for multithread safe operation
-  m_mutex = ARCH->newMutex();
 
   // other initalization
   m_maxPriority = g_defaultMaxPriority;
@@ -149,7 +148,6 @@ Log::~Log()
   for (auto index = m_alwaysOutputters.begin(); index != m_alwaysOutputters.end(); ++index) {
     delete *index;
   }
-  ARCH->closeMutex(m_mutex);
 }
 
 Log *Log::getInstance()
@@ -163,12 +161,13 @@ const char *Log::getFilterName() const
   return getFilterName(getFilter());
 }
 
-const char *Log::getFilterName(int level) const
+const char *Log::getFilterName(LogLevel level) const
 {
-  if (level < 0) {
+  const auto levelIndex = static_cast<int>(level);
+  if (levelIndex < 0) {
     return "Message";
   }
-  return g_priority[level];
+  return g_priority[levelIndex];
 }
 
 void Log::print(const char *file, int line, const char *fmt, ...)
@@ -176,7 +175,7 @@ void Log::print(const char *file, int line, const char *fmt, ...)
   const int initBufferSize = 1024;
   const int bufferResizeScale = 2;
 
-  ELevel priority = getPriority(fmt);
+  LogLevel priority = getPriority(fmt);
   fmt += kPriorityPrefixLength;
 
   if (priority > getFilter()) {
@@ -200,7 +199,7 @@ void Log::print(const char *file, int line, const char *fmt, ...)
     }
   }
 
-  if (priority == kPRINT) {
+  if (priority == LogLevel::Print) {
     output(priority, buffer.data());
   } else {
     auto message = makeMessage(file, line, buffer.data(), priority);
@@ -212,7 +211,7 @@ void Log::insert(ILogOutputter *adoptedOutputter, bool alwaysAtHead)
 {
   assert(adoptedOutputter != nullptr);
 
-  ArchMutexLock lock(m_mutex);
+  std::scoped_lock lock{m_mutex};
   if (alwaysAtHead) {
     m_alwaysOutputters.push_front(adoptedOutputter);
   } else {
@@ -224,14 +223,14 @@ void Log::insert(ILogOutputter *adoptedOutputter, bool alwaysAtHead)
 
 void Log::remove(ILogOutputter *outputter)
 {
-  ArchMutexLock lock(m_mutex);
+  std::scoped_lock lock{m_mutex};
   m_outputters.remove(outputter);
   m_alwaysOutputters.remove(outputter);
 }
 
 void Log::pop_front(bool alwaysAtHead)
 {
-  ArchMutexLock lock(m_mutex);
+  std::scoped_lock lock{m_mutex};
   OutputterList *list = alwaysAtHead ? &m_alwaysOutputters : &m_outputters;
   if (!list->empty()) {
     delete list->front();
@@ -244,7 +243,7 @@ bool Log::setFilter(const char *maxPriority)
   if (maxPriority != nullptr) {
     for (int i = 0; i < g_numPriority; ++i) {
       if (strcmp(maxPriority, g_priority[i]) == 0) {
-        setFilter(i);
+        setFilter(static_cast<LogLevel>(i));
         return true;
       }
     }
@@ -253,26 +252,26 @@ bool Log::setFilter(const char *maxPriority)
   return true;
 }
 
-void Log::setFilter(int maxPriority)
+void Log::setFilter(LogLevel maxPriority)
 {
-  ArchMutexLock lock(m_mutex);
+  std::scoped_lock lock{m_mutex};
   m_maxPriority = maxPriority;
 }
 
-int Log::getFilter() const
+LogLevel Log::getFilter() const
 {
-  ArchMutexLock lock(m_mutex);
+  std::scoped_lock lock{m_mutex};
   return m_maxPriority;
 }
 
-void Log::output(ELevel priority, const char *msg)
+void Log::output(LogLevel priority, const char *msg)
 {
-  assert(priority >= -1 && priority < g_numPriority);
+  assert(static_cast<int>(priority) >= -1 && static_cast<int>(priority) < g_numPriority);
   assert(msg != nullptr);
   if (!msg)
     return;
 
-  ArchMutexLock lock(m_mutex);
+  std::scoped_lock lock{m_mutex};
 
   OutputterList::const_iterator i;
 

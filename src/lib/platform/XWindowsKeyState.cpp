@@ -20,20 +20,16 @@
 #include "deskflow/ClientArgs.h"
 #include "platform/XWindowsUtil.h"
 
+#include <X11/X.h>
+#include <X11/Xutil.h>
 #include <algorithm>
 #include <cstddef>
 #include <map>
-#if X_DISPLAY_MISSING
-#error X11 is required to build deskflow
-#else
-#include <X11/X.h>
-#include <X11/Xutil.h>
 #define XK_MISCELLANY
 #define XK_XKB_KEYS
 #include <X11/keysymdef.h>
 #if HAVE_XKB_EXTENSION
 #include <X11/XKBlib.h>
-#endif
 #endif
 
 static const size_t ModifiersFromXDefaultSize = 32;
@@ -75,17 +71,17 @@ void XWindowsKeyState::init(const Display *display, bool useXKB)
     m_xkb = nullptr;
   }
 #endif
-  setActiveGroup(kGroupPoll);
+  setActiveGroup(s_groupPoll);
 }
 
 void XWindowsKeyState::setActiveGroup(int32_t group)
 {
-  if (group == kGroupPollAndSet) {
+  if (group == s_groupPollAndSet) {
     // we need to set the group to -1 in order for pollActiveGroup() to
     // actually poll for the group
     m_group = -1;
     m_group = pollActiveGroup();
-  } else if (group == kGroupPoll) {
+  } else if (group == s_groupPoll) {
     m_group = -1;
   } else {
     assert(group >= 0);
@@ -485,7 +481,7 @@ void XWindowsKeyState::updateKeysymMap(deskflow::KeyMap &keyMap)
     for (int j = 0; j < maxKeysyms; ++j) {
       item.m_id = XWindowsUtil::mapKeySymToKeyID(keysyms[j]);
       if (item.m_id == kKeyNone) {
-        if (j != 0 && modifierButtons.count(keycode) > 0) {
+        if (j != 0 && modifierButtons.contains(keycode)) {
           // pretend the modifier works in other shift levels
           // because it probably does.
           if (keysyms[1] == NoSymbol || j != 3) {
@@ -513,7 +509,7 @@ void XWindowsKeyState::updateKeysymMap(deskflow::KeyMap &keyMap)
 
       item.m_generates = 0;
       item.m_lock = false;
-      if (modifierButtons.count(keycode) > 0) {
+      if (modifierButtons.contains(keycode)) {
         // get flags for modifier keys
         deskflow::KeyMap::initModifierKey(item);
 

@@ -12,13 +12,11 @@
 
 #include <string>
 
-namespace deskflow {
-
 //! std::string utilities
 /*!
 Provides functions for string manipulation.
 */
-namespace string {
+namespace deskflow::string {
 
 //! Format positional arguments
 /*!
@@ -54,7 +52,7 @@ std::string sizeTypeToString(size_t n);
 /*!
 Convert an a \c string to an size type
 */
-size_t stringToSizeType(std::string string);
+size_t stringToSizeType(const std::string &string);
 
 //! Case-insensitive comparisons
 /*!
@@ -76,5 +74,4 @@ public:
   static bool cmpLess(const std::string::value_type &a, const std::string::value_type &b);
 };
 
-} // namespace string
-} // namespace deskflow
+} // namespace deskflow::string

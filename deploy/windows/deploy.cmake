@@ -9,10 +9,6 @@ set(CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS_SKIP TRUE)
 set(CMAKE_INSTALL_SYSTEM_RUNTIME_DESTINATION .)
 include(InstallRequiredSystemLibraries)
 
-install(CODE "execute_process(
-  COMMAND ${DEPLOYQT} --no-compiler-runtime --no-system-d3d-compiler --no-quick-import -network \"\${CMAKE_INSTALL_PREFIX}/deskflow.exe\"
-)")
-
 configure_file(${MY_DIR}/pre-cpack.cmake.in ${CMAKE_CURRENT_BINARY_DIR}/pre-cpack.cmake @ONLY)
 set(CPACK_PRE_BUILD_SCRIPTS ${CMAKE_CURRENT_BINARY_DIR}/pre-cpack.cmake)
 
@@ -27,6 +23,7 @@ list(APPEND CPACK_GENERATOR "7Z")
 find_program(WIX_APP wix)
 if (NOT "${WIX_APP}" STREQUAL "")
   set(CPACK_WIX_VERSION 4)
+  set(CPACK_WIX_ARCHITECTURE ${BUILD_ARCHITECTURE})
   list(APPEND CPACK_GENERATOR "WIX")
 endif()
 

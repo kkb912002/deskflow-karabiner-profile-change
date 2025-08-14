@@ -1,5 +1,6 @@
 /*
  * Deskflow -- mouse and keyboard sharing utility
+ * SPDX-FileCopyrightText: (C) 2025 Deskflow Developers
  * SPDX-FileCopyrightText: (C) 2012 - 2016 Symless Ltd.
  * SPDX-FileCopyrightText: (C) 2004 Chris Schoeneman
  * SPDX-License-Identifier: GPL-2.0-only WITH LicenseRef-OpenSSL-Exception
@@ -45,7 +46,7 @@ class OSXScreen : public PlatformScreen
 public:
   OSXScreen(
       IEventQueue *events, bool isPrimary, bool enableLangSync = false,
-      deskflow::ClientScrollDirection scrollDirection = deskflow::ClientScrollDirection::SERVER
+      deskflow::ClientScrollDirection scrollDirection = deskflow::ClientScrollDirection::Normal
   );
 
   virtual ~OSXScreen();
@@ -63,6 +64,7 @@ public:
 
   // IPrimaryScreen overrides
   void reconfigure(uint32_t activeSides) override;
+  uint32_t activeSides() override;
   void warpCursor(int32_t x, int32_t y) override;
   uint32_t registerHotKey(KeyID key, KeyModifierMask mask) override;
   void unregisterHotKey(uint32_t id) override;
@@ -99,7 +101,7 @@ public:
 
 protected:
   // IPlatformScreen overrides
-  void handleSystemEvent(const Event &, void *) override;
+  void handleSystemEvent(const Event &e) override;
   void updateButtons() override;
   IKeyState *getKeyState() const override;
 
@@ -147,9 +149,6 @@ private:
   // get the current scroll wheel speed
   double getScrollSpeed() const;
 
-  // clipboard check timer handler
-  void handleClipboardCheck(const Event &, void *);
-
   // Resolution switch callback
   static void displayReconfigurationCallback(CGDirectDisplayID, CGDisplayChangeSummaryFlags, void *);
 
@@ -162,7 +161,7 @@ private:
   static void powerChangeCallback(void *refcon, io_service_t service, natural_t messageType, void *messageArgument);
   void handlePowerChangeRequest(natural_t messageType, void *messageArgument);
 
-  void handleConfirmSleep(const Event &event, void *);
+  void handleConfirmSleep(const Event &event);
 
   // global hotkey operating mode
   static bool isGlobalHotKeyOperatingModeAvailable();
@@ -231,6 +230,7 @@ private:
   // the display
   CGDirectDisplayID m_displayID;
 
+  uint32_t m_activeSides = 0;
   // screen shape stuff
   int32_t m_x, m_y;
   int32_t m_w, m_h;

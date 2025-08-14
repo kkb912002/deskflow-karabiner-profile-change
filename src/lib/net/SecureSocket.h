@@ -11,6 +11,8 @@
 #include "net/SecurityLevel.h"
 #include "net/TCPSocket.h"
 #include "net/XSocket.h"
+
+#include <memory>
 #include <mutex>
 
 class IEventQueue;
@@ -28,7 +30,7 @@ class SecureSocket : public TCPSocket
 {
 public:
   SecureSocket(
-      IEventQueue *events, SocketMultiplexer *socketMultiplexer, IArchNetwork::EAddressFamily family,
+      IEventQueue *events, SocketMultiplexer *socketMultiplexer, IArchNetwork::AddressFamily family,
       SecurityLevel securityLevel = SecurityLevel::Encrypted
   );
   SecureSocket(
@@ -62,8 +64,8 @@ public:
   void secureAccept();
   int secureRead(void *buffer, int size, int &read);
   int secureWrite(const void *buffer, int size, int &wrote);
-  EJobResult doRead() override;
-  EJobResult doWrite() override;
+  JobResult doRead() override;
+  JobResult doWrite() override;
   void initSsl(bool server);
   bool loadCertificates(const std::string &CertFile);
 
@@ -83,7 +85,7 @@ private:
 
   ISocketMultiplexerJob *serviceAccept(ISocketMultiplexerJob *, bool, bool, bool);
 
-  void handleTCPConnected(const Event &event, void *);
+  void handleTCPConnected(const Event &event);
 
 private:
   // all accesses to m_ssl must be protected by this mutex. The only function that is called
@@ -91,7 +93,7 @@ private:
   // by it.
   std::mutex ssl_mutex_;
 
-  Ssl *m_ssl = nullptr;
+  std::unique_ptr<Ssl> m_ssl;
   bool m_secureReady = false;
   bool m_fatal = false;
   SecurityLevel m_securityLevel = SecurityLevel::Encrypted;

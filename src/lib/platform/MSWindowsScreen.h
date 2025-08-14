@@ -1,5 +1,6 @@
 /*
  * Deskflow -- mouse and keyboard sharing utility
+ * SPDX-FileCopyrightText: (C) 2025 Deskflow Developers
  * SPDX-FileCopyrightText: (C) 2012 - 2016 Symless Ltd.
  * SPDX-FileCopyrightText: (C) 2002 Chris Schoeneman
  * SPDX-License-Identifier: GPL-2.0-only WITH LicenseRef-OpenSSL-Exception
@@ -31,7 +32,7 @@ class MSWindowsScreen : public PlatformScreen
 public:
   MSWindowsScreen(
       bool isPrimary, bool noHooks, IEventQueue *events, bool enableLangSync = false,
-      deskflow::ClientScrollDirection scrollDirection = deskflow::ClientScrollDirection::SERVER
+      deskflow::ClientScrollDirection scrollDirection = deskflow::ClientScrollDirection::Normal
   );
   ~MSWindowsScreen() override;
 
@@ -85,6 +86,7 @@ public:
 
   // IPrimaryScreen overrides
   void reconfigure(uint32_t activeSides) override;
+  uint32_t activeSides() override;
   void warpCursor(int32_t x, int32_t y) override;
   uint32_t registerHotKey(KeyID key, KeyModifierMask mask) override;
   void unregisterHotKey(uint32_t id) override;
@@ -126,7 +128,7 @@ public:
 
 protected:
   // IPlatformScreen overrides
-  void handleSystemEvent(const Event &, void *) override;
+  void handleSystemEvent(const Event &event) override;
   void updateButtons() override;
   IKeyState *getKeyState() const override;
 
@@ -190,7 +192,7 @@ private: // HACK
   void updateScreenShape();
 
   // fix timer callback
-  void handleFixes(const Event &, void *);
+  void handleFixes();
 
   // fix the clipboard viewer chain
   void fixClipboardViewer();

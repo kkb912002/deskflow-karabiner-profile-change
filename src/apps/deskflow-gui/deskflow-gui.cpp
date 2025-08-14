@@ -6,6 +6,7 @@
  * SPDX-License-Identifier: GPL-2.0-only WITH LicenseRef-OpenSSL-Exception
  */
 
+#include "VersionInfo.h"
 #include "common/Constants.h"
 #include "common/UrlConstants.h"
 #include "gui/Diagnostic.h"
@@ -17,7 +18,6 @@
 
 #include <QApplication>
 #include <QCommandLineParser>
-#include <QGuiApplication>
 #include <QLocalSocket>
 #include <QMessageBox>
 #include <QSharedMemory>
@@ -37,6 +37,8 @@ using namespace deskflow::gui;
 bool checkMacAssistiveDevices();
 #endif
 
+const static auto kHeader = QStringLiteral("%1: %2\n").arg(kAppName, kDisplayVersion);
+
 int main(int argc, char *argv[])
 {
 #if defined(Q_OS_UNIX) && defined(QT_DEBUG)
@@ -53,8 +55,8 @@ int main(int argc, char *argv[])
   QApplication app(argc, argv);
 
   // Add Command Line Options
-  auto helpOption = QCommandLineOption("help", "Display Help on the command line");
-  auto versionOption = QCommandLineOption("version", "Display version information");
+  auto helpOption = QCommandLineOption({"h", "help"}, "Display Help on the command line");
+  auto versionOption = QCommandLineOption({"v", "version"}, "Display version information");
   auto resetOption = QCommandLineOption("reset", "Reset all settings");
 
   QCommandLineParser parser;
@@ -64,15 +66,19 @@ int main(int argc, char *argv[])
   parser.addOption(resetOption);
   parser.parse(QCoreApplication::arguments());
 
-  const auto header = QStringLiteral("%1: %2\n").arg(kAppName, kDisplayVersion);
-  if (parser.isSet(helpOption) || !parser.unknownOptionNames().isEmpty() || !parser.errorText().isEmpty()) {
-    QTextStream(stdout) << header << QStringLiteral("  %1\n\n").arg(kAppDescription)
+  if (!parser.errorText().isEmpty()) {
+    qCritical().noquote() << parser.errorText() << "\nUse --help for more information.";
+    return 1;
+  }
+
+  if (parser.isSet(helpOption)) {
+    QTextStream(stdout) << kHeader << QStringLiteral("  %1\n\n").arg(kAppDescription)
                         << parser.helpText().replace(QApplication::applicationFilePath(), kAppId);
     return 0;
   }
 
   if (parser.isSet(versionOption)) {
-    QTextStream(stdout) << header << kCopyright << Qt::endl;
+    QTextStream(stdout) << kHeader << kCopyright << Qt::endl;
     return 0;
   }
 
@@ -106,8 +112,13 @@ int main(int argc, char *argv[])
   }
 #endif
 
-  // Sets the fallback icon path
-  setIconFallbackPaths();
+  // Sets the fallback icon path and fallback theme
+  const auto themeName = QStringLiteral("deskflow-%1").arg(iconMode());
+  if (QIcon::themeName().isEmpty())
+    QIcon::setThemeName(themeName);
+  else
+    QIcon::setFallbackThemeName(themeName);
+  QIcon::setFallbackSearchPaths({QStringLiteral(":/icons/%1").arg(themeName)});
 
   qInstallMessageHandler(deskflow::gui::messages::messageHandler);
   qInfo("%s v%s", kAppName, qPrintable(kVersion));

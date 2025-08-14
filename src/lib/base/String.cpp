@@ -13,8 +13,7 @@
 #include <sstream>
 #include <vector>
 
-namespace deskflow {
-namespace string {
+namespace deskflow::string {
 
 std::string format(const char *fmt, ...)
 {
@@ -107,7 +106,8 @@ std::string sprintf(const char *fmt, ...)
 {
   char tmp[1024];
   char *buffer = tmp;
-  auto len = (int)(sizeof(tmp) / sizeof(tmp[0]));
+  auto len = static_cast<int>(std::size(tmp));
+
   std::string result;
   while (buffer != nullptr) {
     // try printing into the buffer
@@ -145,7 +145,7 @@ std::string sizeTypeToString(size_t n)
   return ss.str();
 }
 
-size_t stringToSizeType(std::string string)
+size_t stringToSizeType(const std::string &string)
 {
   std::istringstream iss(string);
   size_t value;
@@ -164,7 +164,7 @@ bool CaselessCmp::operator()(const std::string &a, const std::string &b) const
 
 bool CaselessCmp::less(const std::string_view &a, const std::string_view &b)
 {
-  return std::lexicographical_compare(a.begin(), a.end(), b.begin(), b.end(), &deskflow::string::CaselessCmp::cmpLess);
+  return std::ranges::lexicographical_compare(a, b, &deskflow::string::CaselessCmp::cmpLess);
 }
 
 bool CaselessCmp::equal(const std::string &a, const std::string &b)
@@ -178,5 +178,4 @@ bool CaselessCmp::cmpLess(const std::string::value_type &a, const std::string::v
   return tolower(a) < tolower(b);
 }
 
-} // namespace string
-} // namespace deskflow
+} // namespace deskflow::string

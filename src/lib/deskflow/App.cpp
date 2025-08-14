@@ -8,6 +8,7 @@
 #include "deskflow/App.h"
 
 #include "DisplayInvalidException.h"
+#include "VersionInfo.h"
 #include "arch/Arch.h"
 #include "base/Log.h"
 #include "base/LogOutputters.h"
@@ -87,7 +88,7 @@ int App::run(int argc, char **argv)
   appUtil().adoptApp(this);
 
   // HACK: fail by default (saves us setting result in each catch)
-  int result = kExitFailed;
+  int result = s_exitFailed;
 
   try {
     result = appUtil().run(argc, argv);
@@ -101,7 +102,7 @@ int App::run(int argc, char **argv)
     // display invalid exceptions can occur when going to sleep. When this
     // process exits, the UI will restart us instantly. We don't really want
     // that behevior, so we quies for a bit
-    ARCH->sleep(10);
+    Arch::sleep(10);
   } catch (std::runtime_error &re) {
     LOG((CLOG_CRIT "a runtime error occurred: %s\n", re.what()));
   } catch (std::exception &e) {
@@ -172,7 +173,7 @@ void App::initApp(int argc, const char **argv)
     LOG((
         CLOG_CRIT "%s: unrecognized log level `%s'" BYE, argsBase().m_pname, argsBase().m_logFilter, argsBase().m_pname
     ));
-    m_bye(kExitArgs);
+    m_bye(s_exitArgs);
   }
   loggingFilterWarning();
 

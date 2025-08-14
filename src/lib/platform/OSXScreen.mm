@@ -1,5 +1,6 @@
 /*
  * Deskflow -- mouse and keyboard sharing utility
+ * SPDX-FileCopyrightText: (C) 2025 Deskflow Developers
  * SPDX-FileCopyrightText: (C) 2012 - 2016 Symless Ltd.
  * SPDX-FileCopyrightText: (C) 2004 Chris Schoeneman
  * SPDX-License-Identifier: GPL-2.0-only WITH LicenseRef-OpenSSL-Exception
@@ -11,7 +12,6 @@
 #include "base/EventQueue.h"
 #include "base/IEventQueue.h"
 #include "base/Log.h"
-#include "base/TMethodEventJob.h"
 #include "base/TMethodJob.h"
 #include "client/Client.h"
 #include "deskflow/ClientApp.h"
@@ -142,10 +142,9 @@ OSXScreen::OSXScreen(
     constructMouseButtonEventMap();
 
     // watch for requests to sleep
-    m_events->adoptHandler(
-        EventTypes::OsxScreenConfirmSleep, getEventTarget(),
-        new TMethodEventJob<OSXScreen>(this, &OSXScreen::handleConfirmSleep)
-    );
+    m_events->addHandler(EventTypes::OsxScreenConfirmSleep, getEventTarget(), [this](const auto &e) {
+      handleConfirmSleep(e);
+    });
 
     // create thread for monitoring system power state.
     *m_pmThreadReady = false;
@@ -167,10 +166,9 @@ OSXScreen::OSXScreen(
   }
 
   // install event handlers
-  m_events->adoptHandler(
-      EventTypes::System, m_events->getSystemTarget(),
-      new TMethodEventJob<OSXScreen>(this, &OSXScreen::handleSystemEvent)
-  );
+  m_events->addHandler(EventTypes::System, m_events->getSystemTarget(), [this](const auto &e) {
+    handleSystemEvent(e);
+  });
 
   // install the platform event queue
   m_events->adoptBuffer(new OSXEventQueueBuffer(m_events));
@@ -246,9 +244,15 @@ void OSXScreen::getCursorPos(int32_t &x, int32_t &y) const
   CFRelease(event);
 }
 
-void OSXScreen::reconfigure(uint32_t)
+void OSXScreen::reconfigure(uint32_t activeSides)
 {
-  // do nothing
+  LOG((CLOG_DEBUG "active sides: %x", activeSides));
+  m_activeSides = activeSides;
+}
+
+uint32_t OSXScreen::activeSides()
+{
+  return m_activeSides;
 }
 
 void OSXScreen::warpCursor(int32_t x, int32_t y)
@@ -508,13 +512,13 @@ void OSXScreen::fakeMouseButton(ButtonID id, bool press)
   // This will allow for higher than triple click but the quartz documenation
   // does not specify that this should be limited to triple click
   if (press) {
-    if ((ARCH->time() - m_lastClickTime) <= clickTime && diff <= maxDiff) {
+    if ((Arch::time() - m_lastClickTime) <= clickTime && diff <= maxDiff) {
       m_clickState++;
     } else {
       m_clickState = 1;
     }
 
-    m_lastClickTime = ARCH->time();
+    m_lastClickTime = Arch::time();
   }
 
   if (m_clickState == 1) {
@@ -649,9 +653,7 @@ void OSXScreen::enable()
 {
   // watch the clipboard
   m_clipboardTimer = m_events->newTimer(1.0, nullptr);
-  m_events->adoptHandler(
-      EventTypes::Timer, m_clipboardTimer, new TMethodEventJob<OSXScreen>(this, &OSXScreen::handleClipboardCheck)
-  );
+  m_events->addHandler(EventTypes::Timer, m_clipboardTimer, [this](const auto &) { checkClipboards(); });
 
   if (m_isPrimary) {
     // FIXME -- start watching jump zones
@@ -836,7 +838,7 @@ void OSXScreen::sendClipboardEvent(EventTypes type, ClipboardID id) const
   sendEvent(type, info);
 }
 
-void OSXScreen::handleSystemEvent(const Event &event, void *)
+void OSXScreen::handleSystemEvent(const Event &event)
 {
   EventRef *carbonEvent = static_cast<EventRef *>(event.getData());
   assert(carbonEvent != nullptr);
@@ -994,11 +996,6 @@ bool OSXScreen::onMouseWheel(int32_t xDelta, int32_t yDelta) const
   LOG((CLOG_DEBUG1 "event: button wheel delta=%+d,%+d", xDelta, yDelta));
   sendEvent(EventTypes::PrimaryScreenWheel, WheelInfo::alloc(xDelta, yDelta));
   return true;
-}
-
-void OSXScreen::handleClipboardCheck(const Event &, void *)
-{
-  checkClipboards();
 }
 
 void OSXScreen::displayReconfigurationCallback(
@@ -1430,7 +1427,9 @@ void OSXScreen::handlePowerChangeRequest(natural_t messageType, void *messageArg
     // OSXScreen has to handle this in the main thread so we have to
     // queue a confirm sleep event here.  we actually don't allow the
     // system to sleep until the event is handled.
-    m_events->addEvent(Event(EventTypes::OsxScreenConfirmSleep, getEventTarget(), messageArg, Event::kDontFreeData));
+    m_events->addEvent(
+        Event(EventTypes::OsxScreenConfirmSleep, getEventTarget(), messageArg, Event::EventFlags::DontFreeData)
+    );
     return;
 
   case kIOMessageSystemHasPoweredOn:
@@ -1448,14 +1447,16 @@ void OSXScreen::handlePowerChangeRequest(natural_t messageType, void *messageArg
   }
 }
 
-void OSXScreen::handleConfirmSleep(const Event &event, void *)
+void OSXScreen::handleConfirmSleep(const Event &event)
 {
   long messageArg = (long)event.getData();
   if (messageArg != 0) {
     Lock lock(m_pmMutex);
     if (m_pmRootPort != 0) {
       // deliver suspend event immediately.
-      m_events->addEvent(Event(EventTypes::ScreenSuspend, getEventTarget(), nullptr, Event::kDeliverImmediately));
+      m_events->addEvent(
+          Event(EventTypes::ScreenSuspend, getEventTarget(), nullptr, Event::EventFlags::DeliverImmediately)
+      );
 
       LOG((CLOG_DEBUG "system will sleep"));
       IOAllowPowerChange(m_pmRootPort, messageArg);
@@ -1752,11 +1753,11 @@ void OSXScreen::waitForCarbonLoop() const
 
   LOG((CLOG_DEBUG "waiting for carbon loop"));
 
-  double timeout = ARCH->time() + kCarbonLoopWaitTimeout;
+  double timeout = Arch::time() + kCarbonLoopWaitTimeout;
   while (!m_carbonLoopReady->wait()) {
-    if (ARCH->time() > timeout) {
+    if (Arch::time() > timeout) {
       LOG((CLOG_DEBUG "carbon loop not ready, waiting again"));
-      timeout = ARCH->time() + kCarbonLoopWaitTimeout;
+      timeout = Arch::time() + kCarbonLoopWaitTimeout;
     }
   }
 

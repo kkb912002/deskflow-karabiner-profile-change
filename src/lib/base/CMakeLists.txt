@@ -4,7 +4,7 @@
 # SPDX-License-Identifier: MIT
 
 add_library(base STATIC
-  ELevel.h
+  DirectionTypes.h
   Event.cpp
   Event.h
   EventQueue.cpp
@@ -24,6 +24,7 @@ add_library(base STATIC
   LogOutputters.h
   Log.cpp
   Log.h
+  LogLevel.h
   Path.cpp
   Path.h
   PriorityQueue.h
@@ -33,7 +34,6 @@ add_library(base STATIC
   Stopwatch.h
   String.cpp
   String.h
-  TMethodEventJob.h
   TMethodJob.h
   Unicode.cpp
   Unicode.h
@@ -41,3 +41,4 @@ add_library(base STATIC
   XBase.h
 )
 
+target_link_libraries(base PRIVATE arch)

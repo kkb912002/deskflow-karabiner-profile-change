@@ -22,15 +22,15 @@ public:
   virtual ~ArgsBase() = default;
 
   /// @brief This sets the type of the derived class
-  enum Type
+  enum class ClassType
   {
-    kBase,
-    kServer,
-    kClient
+    Base,
+    Server,
+    Client
   };
 
   /// @brief Stores what type of object this is
-  Type m_classType = kBase;
+  ClassType m_classType = ClassType::Base;
 
   /// @brief Should run as a daemon
   bool m_daemon = true;
@@ -76,10 +76,6 @@ public:
 
   /// @brief Stop this computer from sleeping
   bool m_preventSleep = false;
-
-#if WINAPI_XWINDOWS
-  bool m_disableXInitThreads = false;
-#endif
 
 protected:
   /// @brief deletes pointers and sets the value to null

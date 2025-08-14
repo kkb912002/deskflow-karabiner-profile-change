@@ -12,7 +12,6 @@
 #include "base/Log.h"
 #include "base/Path.h"
 #include "base/String.h"
-#include "base/TMethodEventJob.h"
 #include "common/Settings.h"
 #include "mt/Lock.h"
 #include "net/FingerprintDatabase.h"
@@ -32,22 +31,14 @@
 //
 // SecureSocket
 //
-
-#define MAX_ERROR_SIZE 65535
-
-static const std::size_t MAX_INPUT_BUFFER_SIZE = 1024 * 1024;
+static const std::size_t s_maxInputBufferSize = 1024 * 1024;
 
 static const float s_retryDelay = 0.01f;
 
-enum
-{
-  kMsgSize = 128
-};
-
 struct Ssl
 {
-  SSL_CTX *m_context;
-  SSL *m_ssl;
+  SSL_CTX *m_context = nullptr;
+  SSL *m_ssl = nullptr;
 };
 
 static int verifyIgnoreCertCallback(X509_STORE_CTX *, void *)
@@ -56,7 +47,7 @@ static int verifyIgnoreCertCallback(X509_STORE_CTX *, void *)
 }
 
 SecureSocket::SecureSocket(
-    IEventQueue *events, SocketMultiplexer *socketMultiplexer, IArchNetwork::EAddressFamily family,
+    IEventQueue *events, SocketMultiplexer *socketMultiplexer, IArchNetwork::AddressFamily family,
     SecurityLevel securityLevel
 )
     : TCPSocket(events, socketMultiplexer, family),
@@ -87,11 +78,9 @@ void SecureSocket::close()
 
 void SecureSocket::connect(const NetworkAddress &addr)
 {
-  m_events->adoptHandler(
-      EventTypes::DataSocketConnected, getEventTarget(),
-      new TMethodEventJob<SecureSocket>(this, &SecureSocket::handleTCPConnected)
-  );
-
+  m_events->addHandler(EventTypes::DataSocketConnected, getEventTarget(), [this](const auto &e) {
+    handleTCPConnected(e);
+  });
   TCPSocket::connect(addr);
 }
 
@@ -99,7 +88,7 @@ ISocketMultiplexerJob *SecureSocket::newJob()
 {
   // after TCP connection is established, SecureSocket will pick up
   // connected event and do secureConnect
-  if (m_connected && !m_secureReady) {
+  if (isConnected() && !m_secureReady) {
     return nullptr;
   }
 
@@ -120,22 +109,24 @@ void SecureSocket::secureAccept()
   ));
 }
 
-TCPSocket::EJobResult SecureSocket::doRead()
+TCPSocket::JobResult SecureSocket::doRead()
 {
+  using enum JobResult;
   static uint8_t buffer[4096];
-  memset(buffer, 0, sizeof(buffer));
+  static const auto bufferSize = std::size(buffer);
+  memset(buffer, 0, bufferSize);
   int bytesRead = 0;
   int status = 0;
 
   if (isSecureReady()) {
-    status = secureRead(buffer, sizeof(buffer), bytesRead);
+    status = secureRead(buffer, bufferSize, bytesRead);
     if (status < 0) {
-      return kBreak;
+      return Break;
     } else if (status == 0) {
-      return kNew;
+      return New;
     }
   } else {
-    return kRetry;
+    return Retry;
   }
 
   if (bytesRead > 0) {
@@ -145,13 +136,13 @@ TCPSocket::EJobResult SecureSocket::doRead()
     do {
       m_inputBuffer.write(buffer, bytesRead);
 
-      if (m_inputBuffer.getSize() > MAX_INPUT_BUFFER_SIZE) {
+      if (m_inputBuffer.getSize() > s_maxInputBufferSize) {
         break;
       }
 
-      status = secureRead(buffer, sizeof(buffer), bytesRead);
+      status = secureRead(buffer, bufferSize, bytesRead);
       if (status < 0) {
-        return kBreak;
+        return Break;
       }
     } while (bytesRead > 0 || status > 0);
 
@@ -164,19 +155,20 @@ TCPSocket::EJobResult SecureSocket::doRead()
     // has therefore shutdown but don't flush our buffer
     // since there's still data to be read.
     sendEvent(EventTypes::StreamInputShutdown);
-    if (!m_writable && m_inputBuffer.getSize() == 0) {
+    if (!isWritable() && m_inputBuffer.getSize() == 0) {
       sendEvent(EventTypes::SocketDisconnected);
-      m_connected = false;
+      setConnected(false);
     }
-    m_readable = false;
-    return kNew;
+    setReadable(false);
+    return New;
   }
 
-  return kRetry;
+  return Retry;
 }
 
-TCPSocket::EJobResult SecureSocket::doWrite()
+TCPSocket::JobResult SecureSocket::doWrite()
 {
+  using enum JobResult;
   static bool s_retry = false;
   static int s_retrySize = 0;
   static int s_staticBufferSize = 0;
@@ -201,7 +193,7 @@ TCPSocket::EJobResult SecureSocket::doWrite()
   }
 
   if (bufferSize == 0) {
-    return kRetry;
+    return Retry;
   }
 
   if (isSecureReady()) {
@@ -210,27 +202,27 @@ TCPSocket::EJobResult SecureSocket::doWrite()
       s_retry = false;
       bufferSize = 0;
     } else if (status < 0) {
-      return kBreak;
+      return Break;
     } else if (status == 0) {
       s_retry = true;
       s_retrySize = bufferSize;
-      return kNew;
+      return New;
     }
   } else {
-    return kRetry;
+    return Retry;
   }
 
   if (bytesWrote > 0) {
     discardWrittenData(bytesWrote);
-    return kNew;
+    return New;
   }
 
-  return kRetry;
+  return Retry;
 }
 
 int SecureSocket::secureRead(void *buffer, int size, int &read)
 {
-  std::lock_guard ssl_lock{ssl_mutex_};
+  std::scoped_lock ssl_lock{ssl_mutex_};
 
   if (m_ssl->m_ssl != nullptr) {
     LOG((CLOG_DEBUG2 "reading secure socket"));
@@ -257,7 +249,7 @@ int SecureSocket::secureRead(void *buffer, int size, int &read)
 
 int SecureSocket::secureWrite(const void *buffer, int size, int &wrote)
 {
-  std::lock_guard ssl_lock{ssl_mutex_};
+  std::scoped_lock ssl_lock{ssl_mutex_};
 
   if (m_ssl->m_ssl != nullptr) {
     LOG((CLOG_DEBUG2 "writing secure socket: %p", this));
@@ -290,18 +282,16 @@ bool SecureSocket::isSecureReady() const
 
 void SecureSocket::initSsl(bool server)
 {
-  std::lock_guard ssl_lock{ssl_mutex_};
+  std::scoped_lock ssl_lock{ssl_mutex_};
 
-  m_ssl = new Ssl();
-  m_ssl->m_context = nullptr;
-  m_ssl->m_ssl = nullptr;
+  m_ssl = std::make_unique<Ssl>();
 
   initContext(server);
 }
 
 bool SecureSocket::loadCertificates(const std::string &filename)
 {
-  std::lock_guard ssl_lock{ssl_mutex_};
+  std::scoped_lock ssl_lock{ssl_mutex_};
 
   if (filename.empty()) {
     SslLogger::logError("tls certificate is not specified");
@@ -392,7 +382,7 @@ void SecureSocket::createSSL()
 
 void SecureSocket::freeSSL()
 {
-  std::lock_guard ssl_lock{ssl_mutex_};
+  std::scoped_lock ssl_lock{ssl_mutex_};
 
   isFatal(true);
   // take socket from multiplexer ASAP otherwise the race condition
@@ -410,14 +400,13 @@ void SecureSocket::freeSSL()
       SSL_CTX_free(m_ssl->m_context);
       m_ssl->m_context = nullptr;
     }
-    delete m_ssl;
     m_ssl = nullptr;
   }
 }
 
 int SecureSocket::secureAccept(int socket)
 {
-  std::lock_guard ssl_lock{ssl_mutex_};
+  std::scoped_lock ssl_lock{ssl_mutex_};
 
   createSSL();
 
@@ -436,7 +425,7 @@ int SecureSocket::secureAccept(int socket)
     LOG((CLOG_ERR "failed to accept secure socket"));
     LOG((CLOG_WARN "client connection may not be secure"));
     m_secureReady = false;
-    ARCH->sleep(1);
+    Arch::sleep(1);
     retry = 0;
     return -1; // Failed, error out
   }
@@ -459,7 +448,7 @@ int SecureSocket::secureAccept(int socket)
   if (retry > 0) {
     LOG((CLOG_DEBUG2 "retry accepting secure socket"));
     m_secureReady = false;
-    ARCH->sleep(s_retryDelay);
+    Arch::sleep(s_retryDelay);
     return 0;
   }
 
@@ -479,7 +468,7 @@ int SecureSocket::secureConnect(int socket)
     return -1;
   }
 
-  std::lock_guard ssl_lock{ssl_mutex_};
+  std::scoped_lock ssl_lock{ssl_mutex_};
 
   createSSL();
 
@@ -507,7 +496,7 @@ int SecureSocket::secureConnect(int socket)
   if (retry > 0) {
     LOG((CLOG_DEBUG2 "retry connect secure socket"));
     m_secureReady = false;
-    ARCH->sleep(s_retryDelay);
+    Arch::sleep(s_retryDelay);
     return 0;
   }
 
@@ -555,10 +544,7 @@ void SecureSocket::checkResult(int status, int &retry)
 {
   // ssl errors are a little quirky. the "want" errors are normal and
   // should result in a retry.
-
-  int errorCode = SSL_get_error(m_ssl->m_ssl, status);
-
-  switch (errorCode) {
+  switch (auto errorCode = SSL_get_error(m_ssl->m_ssl, status); errorCode) {
   case SSL_ERROR_NONE:
     retry = 0;
     // operation completed
@@ -579,7 +565,7 @@ void SecureSocket::checkResult(int status, int &retry)
     // Need to make sure the socket is known to be writable so the impending
     // select action actually triggers on a write. This isn't necessary for
     // m_readable because the socket logic is always readable
-    m_writable = true;
+    setWritable(true);
     retry++;
     LOG((CLOG_DEBUG2 "want to write, error=%d, attempt=%d", errorCode, retry));
     break;
@@ -632,15 +618,19 @@ void SecureSocket::checkResult(int status, int &retry)
 
 void SecureSocket::disconnect()
 {
-  sendEvent(EventTypes::SocketStopRetry);
-  sendEvent(EventTypes::SocketDisconnected);
-  sendEvent(EventTypes::StreamInputShutdown);
+  using enum EventTypes;
+  sendEvent(SocketStopRetry);
+  sendEvent(SocketDisconnected);
+  sendEvent(StreamInputShutdown);
 }
 
 bool SecureSocket::verifyCertFingerprint(const QString &FingerprintDatabasePath) const
 {
   const auto cert = SSL_get_peer_certificate(m_ssl->m_ssl);
   const auto sha256 = deskflow::sslCertFingerprint(cert, Fingerprint::Type::SHA256);
+
+  if (cert)
+    X509_free(cert);
 
   if (!sha256.isValid())
     return false;
@@ -728,7 +718,7 @@ ISocketMultiplexerJob *SecureSocket::serviceAccept(ISocketMultiplexerJob *job, b
   );
 }
 
-void SecureSocket::handleTCPConnected(const Event &, void *)
+void SecureSocket::handleTCPConnected(const Event &)
 {
   if (getSocket() == nullptr) {
     LOG((CLOG_DEBUG "disregarding stale connect event"));

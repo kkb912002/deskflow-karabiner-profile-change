@@ -1,5 +1,6 @@
 /*
  * Deskflow -- mouse and keyboard sharing utility
+ * SPDX-FileCopyrightText: (C) 2025 Deskflow Developers
  * SPDX-FileCopyrightText: (C) 2012 - 2016 Symless Ltd.
  * SPDX-FileCopyrightText: (C) 2006 Chris Schoeneman
  * SPDX-License-Identifier: GPL-2.0-only WITH LicenseRef-OpenSSL-Exception
@@ -23,8 +24,6 @@ public:
 
   // IClient overrides
   void mouseWheel(int32_t xDelta, int32_t yDelta) override;
-
-  void handleKeepAlive(const Event &, void *);
 
 protected:
   // ClientProxy overrides

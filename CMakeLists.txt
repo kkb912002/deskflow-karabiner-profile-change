@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2024 Deskflow Developers
+# SPDX-FileCopyrightText: 2024 - 2025 Deskflow Developers
 # SPDX-FileCopyrightText: 2012 - 2024 Symless Ltd
 # SPDX-FileCopyrightText: 2009 - 2012 Nick Bolton
 # SPDX-License-Identifier: MIT
@@ -18,7 +18,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Fallback for when git can not be found
 set(DESKFLOW_VERSION_MAJOR 1)
-set(DESKFLOW_VERSION_MINOR 22)
+set(DESKFLOW_VERSION_MINOR 23)
 set(DESKFLOW_VERSION_PATCH 0)
 set(DESKFLOW_VERSION_TWEAK 0)
 
@@ -66,6 +66,15 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/.git)
       endif()
     endif()
   endif()
+endif()
+
+#generate vcpkg file if needed
+if(WIN32)
+    option (VCPKG_QT "Use Qt from VCPKG" OFF)
+    if(VCPKG_QT)
+        set(QT_LIBS ", \"qttranslations\", \"qtsvg\"")
+    endif()
+    configure_file(cmake/vcpkg.json.in ${CMAKE_SOURCE_DIR}/vcpkg.json @ONLY)
 endif()
 
 #Define our project

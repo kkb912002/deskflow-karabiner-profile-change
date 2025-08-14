@@ -1,5 +1,6 @@
 /*
  * Deskflow -- mouse and keyboard sharing utility
+ * SPDX-FileCopyrightText: (C) 2025 Deskflow Developers
  * SPDX-FileCopyrightText: (C) 2012 - 2016 Symless Ltd.
  * SPDX-FileCopyrightText: (C) 2002 Chris Schoeneman
  * SPDX-License-Identifier: GPL-2.0-only WITH LicenseRef-OpenSSL-Exception
@@ -154,6 +155,7 @@ public:
 
   // IPrimaryScreen overrides
   void reconfigure(uint32_t activeSides) override = 0;
+  uint32_t activeSides() override = 0;
   void warpCursor(int32_t x, int32_t y) override = 0;
   uint32_t registerHotKey(KeyID key, KeyModifierMask mask) override = 0;
   void unregisterHotKey(uint32_t id) override = 0;
@@ -192,10 +194,9 @@ protected:
   A platform screen is expected to install a handler for system
   events in its c'tor like so:
   \code
-  m_events->adoptHandler(EventTypes::System,
+  m_events->addHandler(EventTypes::System,
                         m_events->getSystemTarget(),
-                        new TMethodEventJob<CXXXPlatformScreen>(this,
-                            &CXXXPlatformScreen::handleSystemEvent));
+                        [this] (const auto &e) {handleSystemEvent(e);});
   \endcode
   It should remove the handler in its d'tor.  Override the
   \c handleSystemEvent() method to process system events.
@@ -211,5 +212,5 @@ protected:
   The target of all events should be the value returned by
   \c getEventTarget().
   */
-  virtual void handleSystemEvent(const Event &event, void *) = 0;
+  virtual void handleSystemEvent(const Event &event) = 0;
 };
